@@ -1,3 +1,5 @@
 datasets/
 datasets.zip
 .DS_Store
+scraper/.venv/
+scraper/output/
