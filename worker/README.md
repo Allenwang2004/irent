@@ -114,6 +114,8 @@ compare 需要同一台車的上一次還車當基準，所以同一筆模擬訂
 
 - 判讀中 worker 當掉：該筆會停在 `running`，超過 `STALE_MINUTES`（預設 15 分鐘）後被重新領取。
 - 處理時發生錯誤（連不到 vLLM、照片下載失敗等）：退回 `pending` 重試，最多 `MAX_ATTEMPTS` 次（預設 3），之後標成 `error`，原因寫在 `return_sessions.analysis_error`。
+- 連不到 vLLM（沒啟動、重啟中、模型名稱不符）：worker 不領新工作，log 出現 `vLLM not ready`，每 `POLL_SECONDS` 秒檢查一次，恢復後出現 `vLLM ready` 再繼續。判讀到一半 vLLM 停掉的那筆會退回 `pending`，算用掉一次。
+- 連不到 Supabase：worker 不會結束，log 出現 `claim failed`，每 `POLL_SECONDS` 秒重試。
 - 個別判讀失敗（逾時、JSON 解析失敗）：不算整筆失敗，由其他次判讀多數決；全部失敗才開 `needs_review` 預警。
 
 查詢目前狀態（Supabase SQL Editor）：

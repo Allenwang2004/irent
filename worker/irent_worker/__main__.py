@@ -15,7 +15,7 @@ import time
 from .config import Config
 from .decide import EXTERIOR, INTERIOR, Decision, decide_compare, decide_tidy
 from .store import Store
-from .vlm import Backend, make_backend
+from .vlm import Backend, VLMUnavailable, make_backend
 
 log = logging.getLogger("irent_worker")
 
@@ -85,8 +85,19 @@ async def process(cfg: Config, store: Store, vlm: Backend, session: dict) -> Non
             sid[:8], plate, "yes" if baseline else "no", len(alerts), time.perf_counter() - t0, verdicts,
         )
     except Exception as e:
-        log.exception("failed %s", sid[:8])
-        await store.fail(session, f"{type(e).__name__}: {e}")
+        vlm_down = isinstance(e, VLMUnavailable)
+        if vlm_down:
+            log.warning("vLLM unavailable, returning %s to the queue: %s", sid[:8], e)
+        else:
+            log.exception("failed %s", sid[:8])
+        try:
+            await store.fail(session, f"{type(e).__name__}: {e}")
+        except Exception:
+            # Supabase is unreachable too; the return stays "running" and is
+            # handed out again after STALE_MINUTES.
+            log.exception("could not record the failure of %s", sid[:8])
+        if vlm_down:
+            raise
 
 
 async def check(cfg: Config, store: Store) -> None:
@@ -124,27 +135,57 @@ async def main(args) -> None:
             session = await store.claim_specific(args.session)
             if not session:
                 raise SystemExit(f"No submitted return with id {args.session}")
-            await process(cfg, store, vlm, session)
+            try:
+                await process(cfg, store, vlm, session)
+            except VLMUnavailable as e:
+                raise SystemExit(f"vLLM unavailable, {args.session} is back in the queue: {e}")
             return
+
+        async def pause() -> None:
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=cfg.poll_seconds)
+            except asyncio.TimeoutError:
+                pass
 
         log.info(
             "worker %s polling every %.0fs (model %s, backend %s, %d runs per photo)",
             cfg.worker_id, cfg.poll_seconds, cfg.vlm_model, cfg.vlm_backend, cfg.vlm_runs,
         )
+        # Take no returns while the model is unreachable: a return that fails
+        # goes straight back to the queue and would use up its attempts in seconds.
+        vlm_down = not await vlm.ready()
+        if vlm_down:
+            log.warning("vLLM not ready (%s, %s), waiting for it before taking returns", cfg.vlm_base_url, cfg.vlm_model)
         while not stop.is_set():
-            session = await store.claim()
+            if vlm_down:
+                if not await vlm.ready():
+                    if args.once:
+                        raise SystemExit(f"vLLM not ready ({cfg.vlm_base_url}, {cfg.vlm_model})")
+                    await pause()
+                    continue
+                log.info("vLLM ready, taking returns again")
+                vlm_down = False
+            try:
+                session = await store.claim()
+            except Exception as e:
+                if args.once:
+                    raise
+                # Supabase unreachable or erroring: stay up and try again.
+                log.warning("claim failed, retrying in %.0fs: %s: %s", cfg.poll_seconds, type(e).__name__, e)
+                await pause()
+                continue
             if session:
-                await process(cfg, store, vlm, session)
+                try:
+                    await process(cfg, store, vlm, session)
+                except VLMUnavailable:
+                    vlm_down = True
                 if args.once:
                     return
                 continue
             if args.once:
                 log.info("no waiting returns")
                 return
-            try:
-                await asyncio.wait_for(stop.wait(), timeout=cfg.poll_seconds)
-            except asyncio.TimeoutError:
-                pass
+            await pause()
         log.info("stopped")
     finally:
         await store.close()

@@ -34,7 +34,16 @@ def encode_image(data: bytes, max_side: int) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
 
 
+class VLMUnavailable(Exception):
+    """The VLM server cannot be reached, so no judgement can be made.
+
+    Raised instead of recording a failed run: the whole return goes back to
+    the queue rather than being finished with every photo marked "error".
+    """
+
+
 class Backend(Protocol):
+    async def ready(self) -> bool: ...
     async def compare(self, before: bytes, after: bytes) -> dict: ...
     async def tidy(self, photo: bytes) -> dict: ...
 
@@ -49,7 +58,17 @@ class OpenAIBackend:
         self.client = AsyncOpenAI(base_url=cfg.vlm_base_url, api_key="EMPTY", timeout=cfg.vlm_timeout, max_retries=1)
         self.sem = asyncio.Semaphore(cfg.vlm_concurrency)
 
+    async def ready(self) -> bool:
+        """True when the server answers and serves cfg.vlm_model."""
+        try:
+            models = await self.client.with_options(timeout=10, max_retries=0).models.list()
+        except Exception:
+            return False
+        return any(m.id == self.cfg.vlm_model for m in models.data)
+
     async def _call(self, system: str, content: list, schema: dict, name: str) -> dict:
+        from openai import APIConnectionError, APITimeoutError
+
         cfg = self.cfg
         record: dict = {}
         t0 = time.perf_counter()
@@ -71,7 +90,11 @@ class OpenAIBackend:
                 except json.JSONDecodeError:
                     record["error"] = "parse"
                     record["raw"] = text[:2000]
-            except Exception as e:  # timeouts, connection errors: record and let voting decide
+            except APITimeoutError as e:  # one slow run: record and let voting decide
+                record["error"] = f"{type(e).__name__}: {e}"
+            except APIConnectionError as e:  # server down or restarting: every run would fail
+                raise VLMUnavailable(f"{cfg.vlm_base_url}: {e}") from e
+            except Exception as e:  # bad response for this run: record and let voting decide
                 record["error"] = f"{type(e).__name__}: {e}"
         record["latency_s"] = round(time.perf_counter() - t0, 2)
         return record
@@ -104,6 +127,9 @@ class FakeBackend:
 
     def __init__(self, flag: str = ""):
         self.flag = flag
+
+    async def ready(self) -> bool:
+        return True
 
     async def compare(self, before: bytes, after: bytes) -> dict:
         damage = self.flag == "damage"
