@@ -1,3 +1,5 @@
+import type { GuideKey } from "@/lib/inspection";
+
 // Dashed alignment guides drawn over the live camera, one per photo step.
 // Drawn in a 300x400 box, the same 3:4 shape as the viewfinder and the
 // captured photo, so what lines up on screen lines up in the saved image.
@@ -102,7 +104,21 @@ function RearSeats() {
   );
 }
 
-const GUIDES: Record<number, React.ReactNode> = {
+// The card holder on the driver's sun visor: parking card on the left, fuel
+// card on the right, as in iRent's own photo guide.
+function CardHolder() {
+  return (
+    <>
+      <Dashed d="M30 130 h240 v140 h-240 Z" />
+      <Dashed d="M110 130 v140 M190 130 v140" />
+      <Label x={70} y={200}>停車卡</Label>
+      <Label x={230} y={200}>加油卡</Label>
+    </>
+  );
+}
+
+const GUIDES: Record<string, React.ReactNode> = {
+  card: <CardHolder />,
   10: <FrontSeats />,
   11: <RearSeats />,
   1: <Corner end="front" faceSide="left" />,
@@ -111,7 +127,7 @@ const GUIDES: Record<number, React.ReactNode> = {
   4: <Corner end="rear" faceSide="left" />,
 };
 
-export function Guide({ imageType }: { imageType: number }) {
+export function Guide({ guide }: { guide: GuideKey }) {
   return (
     <svg
       viewBox="0 0 300 400"
@@ -119,7 +135,7 @@ export function Guide({ imageType }: { imageType: number }) {
       className="pointer-events-none absolute inset-0 h-full w-full"
       aria-hidden
     >
-      {GUIDES[imageType]}
+      {GUIDES[String(guide)]}
     </svg>
   );
 }
