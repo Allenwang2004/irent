@@ -5,7 +5,7 @@ Next.js 16 加 Supabase。目前有顧客評論頁（`/reviews`），車況看�
 ## 第一次設定
 
 1. 在 Supabase 建立專案。
-2. 到 SQL Editor 開新查詢，貼上 `supabase/schema.sql` 的內容並執行，建立 `reviews` 資料表。
+2. 到 SQL Editor 開新查詢，依序貼上 repo 根目錄 `supabase/` 裡的 SQL 檔並執行（`01_reviews.sql`、`02_returns.sql`）。
 3. 填寫 `.env.local`（範本是 `.env.example`）：
    - `SUPABASE_URL`：Project Settings > Data API 的 Project URL
    - `SUPABASE_SECRET_KEY`：Project Settings > API Keys 的 Secret key（`sb_secret_...`）
@@ -30,7 +30,7 @@ npm run dev                 # http://localhost:3000/reviews
 
 ## 評論資料
 
-- 資料表：`supabase/schema.sql`
+- 資料表：repo 根目錄的 `supabase/01_reviews.sql`
 - 問題分類規則：`src/lib/review-categories.json`（關鍵字正規表示式）。修改後重新執行 `npm run import:reviews` 就會重新分類
 - 匯入時，每個來源只用最新一份爬蟲檔案；以 `(source, source_id)` 去重。重要程度、處理狀態和備註不會被覆蓋
 

@@ -2,3 +2,5 @@ datasets/
 datasets.zip
 .DS_Store
 scraper/.venv/
+.vercel
+.env*

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { logout } from "../login/actions";
 
 const NAV = [
+  { href: "/returns", label: "還車照片" },
   { href: "/reviews", label: "顧客評論" },
 ];
 
