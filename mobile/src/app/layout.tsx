@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "還車拍照模擬",
-  description: "iRent 智能車況管家：還車拍照即時品質檢查（黑客松展示用）",
+  title: "iRent 取還車模擬",
+  description: "iRent 智能車況管家：取車、還車拍照與即時品質檢查（黑客松展示用）",
   robots: { index: false, follow: false },
 };
 
