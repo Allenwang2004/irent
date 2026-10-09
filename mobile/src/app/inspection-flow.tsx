@@ -88,6 +88,7 @@ export function InspectionFlow({ kind, vehicle, knownDamages, rentalId, token }:
   const [phase, setPhase] = useState<Phase>("intro");
   const [started, setStarted] = useState<Started | null>(null);
   const [targets, setTargets] = useState<Map<string, string>>(new Map());
+  const [references, setReferences] = useState<Map<string, string>>(new Map());
   const [slots, setSlots] = useState<Record<string, SlotState>>({});
   const [extras, setExtras] = useState<Extra[]>([]);
   const [captureSlot, setCaptureSlot] = useState<string>(REQUIRED_STEPS[0].slot);
@@ -115,6 +116,7 @@ export function InspectionFlow({ kind, vehicle, knownDamages, rentalId, token }:
             : await startRegistration(vehicle.id, token!);
       setStarted(s);
       setTargets(new Map(s.targets.map((t) => [t.slot, t.signedUrl])));
+      setReferences(new Map(s.references.map((r) => [r.slot, r.url])));
       setCaptureSlot(REQUIRED_STEPS[0].slot);
       setPhase("capture");
     } catch {
@@ -145,7 +147,13 @@ export function InspectionFlow({ kind, vehicle, knownDamages, rentalId, token }:
   const requiredShot = REQUIRED_STEPS.find((s) => s.slot === captureSlot);
   const knownDamage = knownDamages.find((d) => knownDamageSlot(d.id) === captureSlot);
   const shot: Shot = requiredShot
-    ? { slot: requiredShot.slot, title: requiredShot.title, hint: requiredShot.hint, guide: requiredShot.guide }
+    ? {
+        slot: requiredShot.slot,
+        title: requiredShot.title,
+        hint: requiredShot.hint,
+        guide: requiredShot.guide,
+        reference: references.get(requiredShot.slot),
+      }
     : knownDamage
       ? {
           slot: captureSlot,

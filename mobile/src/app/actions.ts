@@ -21,7 +21,12 @@ import { getSupabase } from "@/lib/supabase";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export type UploadTarget = { slot: string; signedUrl: string };
-export type Started = { inspectionId: string; targets: UploadTarget[] };
+// The previous photo of the same slot, shown faintly behind the live camera
+// so the renter can line the new shot up with it.
+export type Reference = { slot: string; url: string };
+export type Started = { inspectionId: string; targets: UploadTarget[]; references: Reference[] };
+
+const REFERENCE_URL_SECONDS = 2 * 60 * 60;
 
 async function signedUploads(kind: InspectionKind, inspectionId: string, slots: string[]) {
   const supabase = getSupabase();
@@ -45,6 +50,50 @@ async function activeDamageSlots(vehicleId: number) {
     .eq("status", "active");
   if (error) throw new Error(error.message);
   return (data ?? []).map((d) => knownDamageSlot(d.id));
+}
+
+// The same baseline the worker compares against: a return is lined up with
+// this rental's pickup, a pickup with the car's most recent earlier inspection
+// (last return, or the registration photos for a first rental).
+async function referencePhotos(vehicleId: number, kind: InspectionKind, rentalId: number | null): Promise<Reference[]> {
+  const supabase = getSupabase();
+  let baseId: string | null = null;
+  if (kind === "return" && rentalId) {
+    const { data } = await supabase
+      .from("inspections")
+      .select("id")
+      .eq("rental_id", rentalId)
+      .eq("kind", "pickup")
+      .eq("status", "submitted")
+      .limit(1);
+    baseId = data?.[0]?.id ?? null;
+  }
+  if (!baseId) {
+    const { data } = await supabase
+      .from("inspections")
+      .select("id")
+      .eq("vehicle_id", vehicleId)
+      .eq("status", "submitted")
+      .order("submitted_at", { ascending: false })
+      .limit(1);
+    baseId = data?.[0]?.id ?? null;
+  }
+  if (!baseId) return [];
+
+  const { data: photos, error } = await supabase
+    .from("inspection_photos")
+    .select("slot, storage_path")
+    .eq("inspection_id", baseId)
+    .in("slot", REQUIRED_SLOTS);
+  if (error || !photos?.length) return [];
+  const { data: signed } = await supabase.storage
+    .from(PHOTO_BUCKET)
+    .createSignedUrls(photos.map((p) => p.storage_path), REFERENCE_URL_SECONDS);
+  const urlByPath = new Map((signed ?? []).map((s) => [s.path, s.signedUrl]));
+  return photos.flatMap((p) => {
+    const url = urlByPath.get(p.storage_path);
+    return url ? [{ slot: p.slot, url }] : [];
+  });
 }
 
 function orderNo() {
@@ -83,7 +132,11 @@ export async function startPickup(vehicleId: number): Promise<Started & { rental
     if (error) throw new Error(error.message);
 
     const slots = [...REQUIRED_SLOTS, ...(await activeDamageSlots(vehicleId))];
-    return { inspectionId: inspection.id, rentalId: rental.id, targets: await signedUploads("pickup", inspection.id, slots) };
+    const [targets, references] = await Promise.all([
+      signedUploads("pickup", inspection.id, slots),
+      referencePhotos(vehicleId, "pickup", rental.id),
+    ]);
+    return { inspectionId: inspection.id, rentalId: rental.id, targets, references };
   } catch (err) {
     await supabase.from("rentals").update({ status: "cancelled" }).eq("vehicle_id", vehicleId).eq("status", "picking_up");
     await supabase.from("vehicles").update({ status: "available" }).eq("id", vehicleId).eq("status", "in_use");
@@ -110,7 +163,11 @@ export async function startReturn(rentalId: number): Promise<Started> {
   if (error) throw new Error(error.message);
 
   const slots = [...REQUIRED_SLOTS, ...(await activeDamageSlots(rental.vehicle_id))];
-  return { inspectionId: inspection.id, targets: await signedUploads("return", inspection.id, slots) };
+  const [targets, references] = await Promise.all([
+    signedUploads("return", inspection.id, slots),
+    referencePhotos(rental.vehicle_id, "return", rental.id),
+  ]);
+  return { inspectionId: inspection.id, targets, references };
 }
 
 export async function startRegistration(vehicleId: number, token: string): Promise<Started> {
@@ -132,7 +189,12 @@ export async function startRegistration(vehicleId: number, token: string): Promi
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  return { inspectionId: inspection.id, targets: await signedUploads("registration", inspection.id, REQUIRED_SLOTS) };
+  // Registration is the first set of photos, so there is nothing to line up with.
+  return {
+    inspectionId: inspection.id,
+    targets: await signedUploads("registration", inspection.id, REQUIRED_SLOTS),
+    references: [],
+  };
 }
 
 async function openInspection(inspectionId: string) {

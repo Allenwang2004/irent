@@ -10,6 +10,9 @@ export type Shot = {
   title: string;
   hint: string;
   guide: GuideKey | null;
+  // Previous photo of the same view (pickup: last return or registration;
+  // return: this rental's pickup), if there is one.
+  reference?: string;
 };
 
 type Progress = {
@@ -51,6 +54,7 @@ export function CaptureScreen({
   closeLabel,
 }: Props) {
   const [camera, setCamera] = useState<CameraState>({ status: "starting" });
+  const [showReference, setShowReference] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<CameraHandle>(null);
@@ -128,6 +132,7 @@ export function CaptureScreen({
             <CameraView
               ref={cameraRef}
               guide={shot.guide}
+              reference={showReference ? shot.reference : null}
               plate={plate}
               liveCheck={aiming && camera.status === "ready"}
               onReady={() => setCamera({ status: "ready" })}
@@ -195,7 +200,18 @@ export function CaptureScreen({
               aria-label="拍照"
               className="h-18 w-18 justify-self-center rounded-full border-4 border-white bg-white/10 disabled:opacity-50"
             />
-            <span />
+            {shot.reference && camera.status !== "unavailable" ? (
+              <button
+                type="button"
+                onClick={() => setShowReference((v) => !v)}
+                aria-pressed={showReference}
+                className="justify-self-end text-right text-sm text-white/75"
+              >
+                {showReference ? "隱藏上次照片" : "顯示上次照片"}
+              </button>
+            ) : (
+              <span />
+            )}
           </>
         )}
       </div>
