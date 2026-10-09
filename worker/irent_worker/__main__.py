@@ -1,8 +1,8 @@
 """Worker entry point.
 
-    python -m irent_worker              # poll for submitted returns until stopped
-    python -m irent_worker --once       # process at most one waiting return, then exit
-    python -m irent_worker --session ID # (re)analyse one return, e.g. after changing the prompt
+    python -m irent_worker              # poll for submitted pickups and returns until stopped
+    python -m irent_worker --once       # process at most one waiting inspection, then exit
+    python -m irent_worker --session ID # (re)analyse one inspection, e.g. after changing a prompt
     python -m irent_worker --check      # check Supabase and VLM connectivity, then exit
 """
 
@@ -13,7 +13,17 @@ import signal
 import time
 
 from .config import Config
-from .decide import EXTERIOR, INTERIOR, Decision, decide_compare, decide_tidy
+from .decide import (
+    EXTERIOR,
+    INTERIOR,
+    Decision,
+    decide_card,
+    decide_compare,
+    decide_describe,
+    decide_tidy,
+    note_unreported,
+    reconcile,
+)
 from .store import Store
 from .vlm import Backend, VLMUnavailable, make_backend
 
@@ -25,30 +35,44 @@ async def judge_runs(cfg: Config, call) -> list[dict]:
     return list(await asyncio.gather(*(call() for _ in range(cfg.vlm_runs))))
 
 
-async def analyse_photo(cfg, store: Store, vlm: Backend, session_id: str, photo: dict, baseline: dict[int, dict]):
-    image_type = photo["image_type"]
+async def analyse_photo(cfg: Config, store: Store, vlm: Backend, inspection: dict, photo: dict, baseline: dict[int, dict]):
+    """One photo's analysis row, its decision, and how long it took."""
+    context = inspection["kind"]
+    category, image_type = photo["category"], photo["image_type"]
     t0 = time.perf_counter()
-    after = await store.download(photo["storage_path"])
+    if category == "known_damage":
+        # Close-ups of recorded damage are kept as evidence for staff, not judged.
+        return None, None
 
-    if image_type in EXTERIOR:
+    data = await store.download(photo["storage_path"])
+    base_id = None
+    if category == "card":
+        kind = "card"
+        runs = await judge_runs(cfg, lambda: vlm.card(data))
+        decision = decide_card(runs, context)
+    elif category == "extra":
+        kind = "describe"
+        runs = await judge_runs(cfg, lambda: vlm.describe(data))
+        decision = decide_describe(runs)
+    elif image_type in EXTERIOR:
         kind = "compare"
         base = baseline.get(image_type)
         if base is None:
-            # First return of this car: nothing to compare against yet.
-            runs, decision, base_id = [], Decision("no_baseline", None), None
+            # No earlier photo of this angle (should not happen once the car is registered).
+            runs, decision = [], Decision("no_baseline", None)
         else:
             before = await store.download(base["storage_path"])
-            runs = await judge_runs(cfg, lambda: vlm.compare(before, after))
-            decision, base_id = decide_compare(image_type, runs), base["id"]
+            runs = await judge_runs(cfg, lambda: vlm.compare(before, data))
+            decision, base_id = decide_compare(image_type, runs, context), base["id"]
     elif image_type in INTERIOR:
-        kind, base_id = "tidy", None
-        runs = await judge_runs(cfg, lambda: vlm.tidy(after))
-        decision = decide_tidy(image_type, runs)
+        kind = "tidy"
+        runs = await judge_runs(cfg, lambda: vlm.tidy(data))
+        decision = decide_tidy(image_type, runs, context)
     else:
-        return None, []
+        return None, None
 
     row = {
-        "session_id": session_id,
+        "inspection_id": inspection["id"],
         "photo_id": photo["id"],
         "kind": kind,
         "baseline_photo_id": base_id,
@@ -59,43 +83,71 @@ async def analyse_photo(cfg, store: Store, vlm: Backend, session_id: str, photo:
         "results": runs,
         "latency_ms": round((time.perf_counter() - t0) * 1000),
     }
-    alerts = [
-        {"session_id": session_id, "photo_id": photo["id"], "kind": a.kind, "severity": a.severity, "message": a.message}
-        for a in decision.alerts
-    ]
-    return row, alerts
+    return row, decision
 
 
-async def process(cfg: Config, store: Store, vlm: Backend, session: dict) -> None:
-    sid = session["id"]
+async def process(cfg: Config, store: Store, vlm: Backend, inspection: dict) -> None:
+    iid = inspection["id"]
+    context = inspection["kind"]
     t0 = time.perf_counter()
     try:
-        plate, submitted_at = await store.session_plate(sid)
-        photos = await store.photos(sid)
-        baseline = await store.baseline_photos(plate, submitted_at)
-        results = await asyncio.gather(*(analyse_photo(cfg, store, vlm, sid, p, baseline) for p in photos))
-        rows = [r for r, _ in results if r]
-        alerts = [a for _, al in results for a in al]
+        plate = await store.plate(inspection["vehicle_id"])
+        photos = await store.photos(iid)
+        base, baseline = await store.baseline(inspection)
+        results = await asyncio.gather(*(analyse_photo(cfg, store, vlm, inspection, p, baseline) for p in photos))
+
+        rows, alerts = [], []
+        reported, found_new_damage = [], False
+        for photo, (row, decision) in zip(photos, results):
+            if row is None:
+                continue
+            rows.append(row)
+            if photo["category"] == "extra":
+                reported.append({"photo_id": photo["id"], "location": photo["location"], "note": photo["note"], "decision": decision})
+                continue
+            found_new_damage |= decision.verdict == "new_damage"
+            alerts += [(photo["id"], a) for a in decision.alerts]
+
+        # Renter-reported damage is judged together with what the comparison found.
+        if context == "return":
+            note_unreported([a for _, a in alerts], len(reported))
+        report_alerts = reconcile(context, reported, found_new_damage)
+        alerts += [(r["photo_id"], a) for r, a in zip(reported, report_alerts)]
+
         await store.save_analyses(rows)
-        await store.replace_alerts(sid, alerts)
-        await store.finish(sid)
+        await store.replace_alerts(
+            iid,
+            [
+                {
+                    "inspection_id": iid,
+                    "vehicle_id": inspection["vehicle_id"],
+                    "photo_id": photo_id,
+                    "kind": a.kind,
+                    "severity": a.severity,
+                    "message": a.message,
+                    "details": a.details,
+                }
+                for photo_id, a in alerts
+            ],
+        )
+        await store.finish(iid)
         verdicts = ", ".join(f"{r['kind']}:{r['verdict']}" for r in rows)
         log.info(
-            "done %s plate=%s baseline=%s alerts=%d in %.1fs [%s]",
-            sid[:8], plate, "yes" if baseline else "no", len(alerts), time.perf_counter() - t0, verdicts,
+            "done %s %s plate=%s baseline=%s alerts=%d in %.1fs [%s]",
+            context, iid[:8], plate, base["kind"] if base else "none", len(alerts), time.perf_counter() - t0, verdicts,
         )
     except Exception as e:
         vlm_down = isinstance(e, VLMUnavailable)
         if vlm_down:
-            log.warning("vLLM unavailable, returning %s to the queue: %s", sid[:8], e)
+            log.warning("vLLM unavailable, returning %s to the queue: %s", iid[:8], e)
         else:
-            log.exception("failed %s", sid[:8])
+            log.exception("failed %s", iid[:8])
         try:
-            await store.fail(session, f"{type(e).__name__}: {e}")
+            await store.fail(inspection, f"{type(e).__name__}: {e}")
         except Exception:
-            # Supabase is unreachable too; the return stays "running" and is
+            # Supabase is unreachable too; the inspection stays "running" and is
             # handed out again after STALE_MINUTES.
-            log.exception("could not record the failure of %s", sid[:8])
+            log.exception("could not record the failure of %s", iid[:8])
         if vlm_down:
             raise
 
@@ -105,7 +157,7 @@ async def check(cfg: Config, store: Store) -> None:
     try:
         status = await store.check()
     except RuntimeError as e:
-        status = "TABLES MISSING, run supabase/03_analyses.sql" if "PGRST205" in str(e) else f"ERROR {e}"
+        status = "TABLES MISSING, run supabase/04_inspections.sql" if "PGRST205" in str(e) else f"ERROR {e}"
     print(f"supabase     {status} ({cfg.supabase_url})")
     if cfg.vlm_backend == "fake":
         print("vlm          fake backend (no model calls)")
@@ -134,7 +186,7 @@ async def main(args) -> None:
         if args.session:
             session = await store.claim_specific(args.session)
             if not session:
-                raise SystemExit(f"No submitted return with id {args.session}")
+                raise SystemExit(f"No submitted pickup or return with id {args.session}")
             try:
                 await process(cfg, store, vlm, session)
             except VLMUnavailable as e:
@@ -151,11 +203,11 @@ async def main(args) -> None:
             "worker %s polling every %.0fs (model %s, backend %s, %d runs per photo)",
             cfg.worker_id, cfg.poll_seconds, cfg.vlm_model, cfg.vlm_backend, cfg.vlm_runs,
         )
-        # Take no returns while the model is unreachable: a return that fails
+        # Take no work while the model is unreachable: an inspection that fails
         # goes straight back to the queue and would use up its attempts in seconds.
         vlm_down = not await vlm.ready()
         if vlm_down:
-            log.warning("vLLM not ready (%s, %s), waiting for it before taking returns", cfg.vlm_base_url, cfg.vlm_model)
+            log.warning("vLLM not ready (%s, %s), waiting for it before taking inspections", cfg.vlm_base_url, cfg.vlm_model)
         while not stop.is_set():
             if vlm_down:
                 if not await vlm.ready():
@@ -163,7 +215,7 @@ async def main(args) -> None:
                         raise SystemExit(f"vLLM not ready ({cfg.vlm_base_url}, {cfg.vlm_model})")
                     await pause()
                     continue
-                log.info("vLLM ready, taking returns again")
+                log.info("vLLM ready, taking inspections again")
                 vlm_down = False
             try:
                 session = await store.claim()
@@ -183,7 +235,7 @@ async def main(args) -> None:
                     return
                 continue
             if args.once:
-                log.info("no waiting returns")
+                log.info("no waiting inspections")
                 return
             await pause()
         log.info("stopped")
@@ -193,8 +245,8 @@ async def main(args) -> None:
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(prog="python -m irent_worker", description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--once", action="store_true", help="process at most one waiting return, then exit")
-    ap.add_argument("--session", help="(re)analyse this return id, whatever its analysis status")
+    ap.add_argument("--once", action="store_true", help="process at most one waiting inspection, then exit")
+    ap.add_argument("--session", help="(re)analyse this pickup or return id, whatever its analysis status")
     ap.add_argument("--check", action="store_true", help="check Supabase and VLM connectivity, then exit")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()

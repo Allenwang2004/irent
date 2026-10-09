@@ -101,3 +101,63 @@ TIDY_INSTRUCTION = f"""請檢查上面這張車內照片，以 JSON 回答：
 - reason：用繁體中文說明判斷理由。
 
 注意：光線昏暗、反光、座椅原本的花紋或磨損不算髒污。"""
+
+# ---------------------------------------------------------------- card
+# The fuel and parking cards live in a holder on the driver's sun visor. A
+# missing card at pickup means the previous renter kept it; at return, this one.
+
+CARD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "observation": {"type": "string"},
+        "holder_visible": {"type": "boolean"},
+        "fuel_card": {"type": "boolean"},
+        "parking_card": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string"},
+    },
+    "required": ["observation", "holder_visible", "fuel_card", "parking_card", "confidence", "reason"],
+    "additionalProperties": False,
+}
+
+CARD_SYSTEM = "你是租車公司的車況檢查員，負責確認車上的加油卡和停車卡有沒有放在駕駛座遮陽板的卡夾裡。"
+
+CARD_INSTRUCTION = """請檢查上面這張照片，以 JSON 回答：
+
+- observation：描述照片拍到什麼，以及卡夾裡看得到的東西。
+- holder_visible：照片是否清楚拍到遮陽板上的卡夾。
+- fuel_card：卡夾裡是否看得到加油卡。
+- parking_card：卡夾裡是否看得到停車卡。
+- confidence：對判斷的信心，0 到 1。
+- reason：用繁體中文說明判斷理由。
+
+注意：只有看得到卡片本身才算在；卡夾上印的「加油卡」「停車卡」字樣不算卡片。"""
+
+# ---------------------------------------------------------------- describe
+# A close-up the renter took of damage they point out. There is no "before"
+# photo of the same spot, so the model only describes what it sees.
+
+DESCRIBE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "observation": {"type": "string"},
+        "damage_visible": {"type": "boolean"},
+        "items": COMPARE_SCHEMA["properties"]["items"],
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reason": {"type": "string"},
+    },
+    "required": ["observation", "damage_visible", "items", "confidence", "reason"],
+    "additionalProperties": False,
+}
+
+DESCRIBE_SYSTEM = "你是租車公司的車況檢查員，負責判讀用戶拍下的車損特寫照片。"
+
+DESCRIBE_INSTRUCTION = f"""用戶表示這張照片拍到一處車損。請以 JSON 回答：
+
+- observation：描述照片拍到車子的哪個部位，以及看得到的狀況。
+- damage_visible：照片中是否真的看得到損傷。
+- items：每一處損傷的位置（用鈑件名稱，例如「左前保險桿」）、類型（限 {"、".join(DAMAGE_TYPES)}）、嚴重度。沒有則為空陣列。
+- confidence：對 damage_visible 判斷的信心，0 到 1。
+- reason：用繁體中文說明判斷理由。
+
+注意：反光、倒影、水漬、灰塵、陰影不是車損。"""

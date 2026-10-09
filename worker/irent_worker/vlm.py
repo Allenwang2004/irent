@@ -15,11 +15,17 @@ from PIL import Image, ImageOps
 
 from .config import Config
 from .prompts import (
+    CARD_INSTRUCTION,
+    CARD_SCHEMA,
+    CARD_SYSTEM,
     COMPARE_AFTER_LABEL,
     COMPARE_BEFORE_LABEL,
     COMPARE_INSTRUCTION,
     COMPARE_SCHEMA,
     COMPARE_SYSTEM,
+    DESCRIBE_INSTRUCTION,
+    DESCRIBE_SCHEMA,
+    DESCRIBE_SYSTEM,
     TIDY_INSTRUCTION,
     TIDY_SCHEMA,
     TIDY_SYSTEM,
@@ -46,6 +52,8 @@ class Backend(Protocol):
     async def ready(self) -> bool: ...
     async def compare(self, before: bytes, after: bytes) -> dict: ...
     async def tidy(self, photo: bytes) -> dict: ...
+    async def card(self, photo: bytes) -> dict: ...
+    async def describe(self, photo: bytes) -> dict: ...
 
 
 class OpenAIBackend:
@@ -117,12 +125,26 @@ class OpenAIBackend:
         ]
         return await self._call(TIDY_SYSTEM, content, TIDY_SCHEMA, "interior_tidy")
 
+    async def _single(self, photo: bytes, system: str, instruction: str, schema: dict, name: str) -> dict:
+        content = [
+            {"type": "image_url", "image_url": {"url": encode_image(photo, self.cfg.max_side)}},
+            {"type": "text", "text": instruction},
+        ]
+        return await self._call(system, content, schema, name)
+
+    async def card(self, photo: bytes) -> dict:
+        return await self._single(photo, CARD_SYSTEM, CARD_INSTRUCTION, CARD_SCHEMA, "card_check")
+
+    async def describe(self, photo: bytes) -> dict:
+        return await self._single(photo, DESCRIBE_SYSTEM, DESCRIBE_INSTRUCTION, DESCRIBE_SCHEMA, "damage_describe")
+
 
 class FakeBackend:
     """Canned answers for testing the queue and database plumbing without a GPU.
 
-    FAKE_VLM_FLAG=damage or FAKE_VLM_FLAG=dirty makes every answer report a
-    problem, to see alerts reach the back office.
+    FAKE_VLM_FLAG=damage, dirty or card makes every answer of that kind report
+    a problem (new damage, dirty interior, missing card), to see alerts reach
+    the back office.
     """
 
     def __init__(self, flag: str = ""):
@@ -155,6 +177,33 @@ class FakeBackend:
                 "issues": [{"location": "後座腳踏墊", "type": "垃圾"}] if dirty else [],
                 "left_items": ["雨傘"] if dirty else [],
                 "confidence": 0.9,
+                "reason": "FAKE_VLM",
+            },
+        }
+
+
+    async def card(self, photo: bytes) -> dict:
+        missing = self.flag == "card"
+        return {
+            "latency_s": 0.0,
+            "result": {
+                "observation": "（測試用假結果）",
+                "holder_visible": True,
+                "fuel_card": not missing,
+                "parking_card": True,
+                "confidence": 0.9,
+                "reason": "FAKE_VLM",
+            },
+        }
+
+    async def describe(self, photo: bytes) -> dict:
+        return {
+            "latency_s": 0.0,
+            "result": {
+                "observation": "（測試用假結果）",
+                "damage_visible": True,
+                "items": [{"location": "後保險桿", "type": "刮傷", "severity": "輕微"}],
+                "confidence": 0.8,
                 "reason": "FAKE_VLM",
             },
         }
