@@ -14,7 +14,7 @@ export type LoginState = { error?: string };
 // Only allow same-site relative paths, so ?next= cannot send users elsewhere.
 function safeNext(value: FormDataEntryValue | null) {
   const next = typeof value === "string" ? value : "";
-  return next.startsWith("/") && !next.startsWith("//") ? next : "/reviews";
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/alerts";
 }
 
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {

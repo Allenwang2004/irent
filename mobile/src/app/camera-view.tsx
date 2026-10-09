@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
+import type { GuideKey } from "@/lib/inspection";
 import { analyzeFrame, type QualityResult } from "@/lib/quality";
 import { Guide } from "./guides";
 
@@ -13,7 +14,8 @@ export type CameraHandle = { capture: () => Promise<Blob> };
 
 type Props = {
   ref: Ref<CameraHandle>;
-  imageType: number;
+  // Alignment overlay; none for close-ups of a specific damage.
+  guide: GuideKey | null;
   plate: string;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
@@ -33,7 +35,7 @@ function visibleCrop(video: HTMLVideoElement) {
   return { sx: 0, sy: (vh - h) / 2, sw: vw, sh: h };
 }
 
-export function CameraView({ ref, imageType, plate, liveCheck, onReady, onUnavailable }: Props) {
+export function CameraView({ ref, guide, plate, liveCheck, onReady, onUnavailable }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
@@ -138,7 +140,7 @@ export function CameraView({ ref, imageType, plate, liveCheck, onReady, onUnavai
   return (
     <>
       <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" />
-      <Guide imageType={imageType} />
+      {guide !== null && <Guide guide={guide} />}
       {hint && (
         <div
           role="status"
@@ -168,10 +170,10 @@ export function CameraView({ ref, imageType, plate, liveCheck, onReady, onUnavai
 
 // Short, one-line versions of the post-capture messages, worst issue first.
 function liveHint(result: QualityResult | null) {
-  if (!result) return { dot: "bg-white/60", text: "對齊框線後拍照" };
+  if (!result) return { dot: "bg-white/60", text: "對準後拍照" };
   const issue =
     result.issues.find((i) => i.level === "fail") ?? result.issues.find((i) => i.level === "warn");
-  if (!issue) return { dot: "bg-good", text: "畫面清楚，對齊框線後拍照" };
+  if (!issue) return { dot: "bg-good", text: "畫面清楚，可以拍了" };
   const fail = issue.level === "fail";
   const text = {
     dark: fail ? "太暗了，請移到亮處或開補光" : "畫面偏暗",

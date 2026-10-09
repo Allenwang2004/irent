@@ -2,7 +2,9 @@ import Link from "next/link";
 import { logout } from "../login/actions";
 
 const NAV = [
-  { href: "/returns", label: "還車照片" },
+  { href: "/alerts", label: "預警" },
+  { href: "/inspections", label: "取還車紀錄" },
+  { href: "/vehicles", label: "車輛" },
   { href: "/reviews", label: "顧客評論" },
 ];
 
@@ -18,7 +20,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 {item.label}
               </Link>
             ))}
-            <span className="text-ink-3" title="下一步建置">車況看板（建置中）</span>
           </nav>
           <form action={logout}>
             <button type="submit" className="text-sm text-ink-2 hover:text-ink">
