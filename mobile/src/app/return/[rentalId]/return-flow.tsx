@@ -211,54 +211,68 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
     const step = steps[current];
     const aiming = !step.pending && !busy;
     return (
-      <main className="flex flex-1 flex-col bg-camera text-white">
+      // Exactly one screen tall and never scrolls: the viewfinder takes whatever
+      // height is left after the header, thumbnails and shutter.
+      <main className="flex h-dvh flex-col overflow-hidden overscroll-none bg-camera text-white">
         {input}
-        <header className="px-4 pt-4 pb-3 text-center">
-          <div className="text-xs text-white/60">
-            {current + 1} / {PHOTO_STEPS.length}
-          </div>
-          <h1 className="text-lg font-semibold">{stepDef.title}</h1>
-          <p className="text-sm text-white/75">{stepDef.hint}</p>
+        <header className="shrink-0 px-4 pt-3 pb-2 text-center">
+          <h1 className="text-base font-semibold">
+            <span className="mr-2 text-xs font-normal text-white/60">
+              {current + 1} / {PHOTO_STEPS.length}
+            </span>
+            {stepDef.title}
+          </h1>
+          <p className="text-xs text-white/75">{stepDef.hint}</p>
         </header>
 
-        <div className="relative mx-4 aspect-[3/4] overflow-hidden rounded-lg bg-camera-2">
-          {camera.status === "unavailable" ? (
-            <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center text-sm text-white/70">
-              <p>{camera.reason}，改用手機相機拍照。</p>
-              <p>{stepDef.hint}</p>
+        {/* Size the 3:4 viewfinder from the space available (container query units)
+            so it keeps the exact shape the guide and the saved crop assume. */}
+        <div className="flex min-h-0 flex-1 items-center justify-center px-4 [container-type:size]">
+          <div className="relative h-[min(100cqh,133.333cqw)] w-[min(100cqw,75cqh)] overflow-hidden rounded-lg bg-camera-2">
+            {camera.status === "unavailable" ? (
+              <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center text-sm text-white/70">
+                <p>{camera.reason}，改用手機相機拍照。</p>
+                <p>{stepDef.hint}</p>
+              </div>
+            ) : (
+              <CameraView
+                ref={cameraRef}
+                imageType={stepDef.imageType}
+                plate={rental.plate}
+                liveCheck={aiming && camera.status === "ready"}
+                onReady={() => setCamera({ status: "ready" })}
+                onUnavailable={(reason) => setCamera({ status: "unavailable", reason })}
+              />
+            )}
+            {step.pending && (
+              // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+              <img
+                src={step.pending.previewUrl}
+                alt={`${stepDef.title}照片`}
+                className="absolute inset-0 h-full w-full bg-camera-2 object-contain"
+              />
+            )}
+            {/* Messages overlay the frame so they never push the shutter off screen. */}
+            <div className="absolute inset-x-2 bottom-2 flex flex-col gap-1.5">
+              {busy && <p className="rounded-lg bg-black/70 px-3 py-2 text-sm">檢查照片中...</p>}
+              {!busy && step.pending && <QualityBanner quality={step.pending.quality} />}
+              {!busy && !step.pending && step.accepted && (
+                <p className="mb-9 rounded-lg bg-black/70 px-3 py-2 text-sm text-white/85">
+                  這個角度已經拍好了。可以重拍，或點下方縮圖切換。
+                </p>
+              )}
+              {error && (
+                <p role="alert" className="rounded-lg bg-black/70 px-3 py-2 text-sm text-critical">
+                  {error}
+                </p>
+              )}
             </div>
-          ) : (
-            <CameraView
-              ref={cameraRef}
-              imageType={stepDef.imageType}
-              plate={rental.plate}
-              liveCheck={aiming && camera.status === "ready"}
-              onReady={() => setCamera({ status: "ready" })}
-              onUnavailable={(reason) => setCamera({ status: "unavailable", reason })}
-            />
-          )}
-          {step.pending && (
-            // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-            <img
-              src={step.pending.previewUrl}
-              alt={`${stepDef.title}照片`}
-              className="absolute inset-0 h-full w-full bg-camera-2 object-contain"
-            />
-          )}
-        </div>
-
-        <div className="mx-4 mt-3 min-h-20">
-          {busy && <p className="text-sm text-white/75">檢查照片中...</p>}
-          {!busy && step.pending && <QualityBanner quality={step.pending.quality} />}
-          {!busy && !step.pending && step.accepted && (
-            <p className="text-sm text-white/75">這個角度已經拍好了。可以重拍，或點下方縮圖切換。</p>
-          )}
-          {error && <p role="alert" className="text-sm text-critical">{error}</p>}
+          </div>
         </div>
 
         <Thumbnails steps={steps} current={current} onSelect={setCurrent} />
 
-        <div className="mt-auto grid grid-cols-3 items-center px-4 pt-4 pb-8">
+        <div className="grid h-24 shrink-0 grid-cols-3 items-center px-4 pb-[env(safe-area-inset-bottom)]">
           {step.pending ? (
             <div className="col-span-3 flex justify-center gap-6">
               <button type="button" onClick={retake} className="rounded-full border border-white/40 px-6 py-3 text-sm">
@@ -401,7 +415,7 @@ const BANNER = {
 function QualityBanner({ quality }: { quality: QualityResult }) {
   const style = BANNER[quality.verdict];
   return (
-    <div role="status" className={`rounded-lg border-l-4 bg-white/5 px-3 py-2 ${style.className}`}>
+    <div role="status" className={`rounded-lg border-l-4 bg-black/75 px-3 py-2 ${style.className}`}>
       <div className="flex items-center gap-2 text-sm font-semibold">
         <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} aria-hidden />
         {style.label}
@@ -426,7 +440,7 @@ function Thumbnails({
   onSelect: (i: number) => void;
 }) {
   return (
-    <ol className="mx-4 mt-3 grid grid-cols-6 gap-1.5">
+    <ol className="mx-4 mt-2 grid shrink-0 grid-cols-6 gap-1.5">
       {steps.map((s, i) => (
         <li key={PHOTO_STEPS[i].imageType}>
           <button
