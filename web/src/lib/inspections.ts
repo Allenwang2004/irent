@@ -58,6 +58,8 @@ export type Photo = {
   verdict: "pass" | "warn";
   rejected_shots: number;
   url: string | null;
+  // Location of the recorded damage a known_damage close-up shows.
+  damage_location: string | null;
   analyses: { kind: string; verdict: string; confidence: number | null; results: unknown[] }[];
 };
 
@@ -72,10 +74,12 @@ export type Inspection = {
   photos: Photo[];
 };
 
-export function photoLabel(p: Pick<Photo, "category" | "image_type" | "location">, damageLocation?: string) {
+export function photoLabel(
+  p: Pick<Photo, "category" | "image_type" | "location"> & { damage_location?: string | null },
+) {
   if (p.category === "card") return "卡片";
   if (p.category === "angle") return ANGLE_LABELS[p.image_type ?? 0] ?? "角度";
-  if (p.category === "known_damage") return `已知：${damageLocation ?? "車損"}`;
+  if (p.category === "known_damage") return `已知：${p.damage_location ?? "車損"}`;
   return `回報：${p.location ?? "損傷"}`;
 }
 
@@ -93,7 +97,10 @@ function sortPhotos(photos: Photo[]) {
 type Row = Omit<Inspection, "vehicle" | "rental" | "photos"> & {
   vehicles: Inspection["vehicle"];
   rentals: Inspection["rental"];
-  inspection_photos: (Omit<Photo, "url" | "analyses"> & { photo_analyses: Photo["analyses"] })[];
+  inspection_photos: (Omit<Photo, "url" | "analyses" | "damage_location"> & {
+    photo_analyses: Photo["analyses"];
+    vehicle_damages: { location: string } | null;
+  })[];
 };
 
 export async function listInspections(opts: { kind?: InspectionKind; vehicleId?: number; limit?: number }) {
@@ -102,7 +109,8 @@ export async function listInspections(opts: { kind?: InspectionKind; vehicleId?:
     .select(
       "id, kind, submitted_at, analysis_status, analysis_error, vehicles(id, plate, car_model), rentals(order_no), " +
         "inspection_photos(id, slot, category, image_type, damage_id, location, note, storage_path, verdict, rejected_shots, " +
-        "photo_analyses!photo_analyses_photo_id_fkey(kind, verdict, confidence, results))",
+        "photo_analyses!photo_analyses_photo_id_fkey(kind, verdict, confidence, results), " +
+        "vehicle_damages!inspection_photos_damage_id_fkey(location))",
     )
     .eq("status", "submitted")
     .order("submitted_at", { ascending: false })
@@ -123,8 +131,9 @@ export async function listInspections(opts: { kind?: InspectionKind; vehicleId?:
     vehicle: r.vehicles,
     rental: r.rentals,
     photos: sortPhotos(
-      r.inspection_photos.map(({ photo_analyses, ...p }) => ({
+      r.inspection_photos.map(({ photo_analyses, vehicle_damages, ...p }) => ({
         ...p,
+        damage_location: vehicle_damages?.location ?? null,
         analyses: photo_analyses ?? [],
         url: urls.get(p.storage_path) ?? null,
       })),
