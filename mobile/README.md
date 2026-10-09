@@ -6,11 +6,14 @@
 
 1. 選一筆模擬訂單（`rentals` 資料表的 3 筆 DEMO 訂單）
 2. 依 iRent 的順序拍 6 張：前座、後座、左前、右前、左後、右後
-3. 每張拍完立刻在瀏覽器裡檢查清晰度、亮度、反光
+3. 在頁面裡直接開即時相機（`getUserMedia`），畫面上疊對齊框線（`guides.tsx`）；
+   對準時每 0.5 秒檢查一次亮度和清晰度，按快門前就提示「太暗」「模糊」。
+   沒有相機權限或瀏覽器不支援時，自動改用手機的相機 App。也可以「從相簿選擇」準備好的照片
+4. 每張拍完立刻在瀏覽器裡檢查清晰度、亮度、反光
    - 不合格：只能重拍
    - 有提醒：可以重拍或仍使用
-4. 通過的照片縮到長邊 1280px，用伺服器發的簽名網址直接上傳到 Supabase Storage
-5. 確認後送出，營運後台（`web/` 的「還車照片」頁）就看得到
+5. 通過的照片縮到長邊 1280px，用伺服器發的簽名網址直接上傳到 Supabase Storage
+6. 確認後送出，營運後台（`web/` 的「還車照片」頁）就看得到
 
 ## 品質檢查門檻
 
@@ -30,7 +33,7 @@
 cd mobile
 npm install
 cp .env.example .env.local   # 填入跟 web/ 同一個 Supabase 專案的 URL 和 Secret key
-npm run dev                  # 預設 http://localhost:3000，手機測試相機需要 HTTPS（部署到 Vercel）
+npm run dev                  # 預設 http://localhost:3000，手機上的網頁相機需要 HTTPS（部署到 Vercel）；本機 localhost 可用電腦的視訊鏡頭
 ```
 
 資料表和 Storage bucket 由 repo 根目錄的 `supabase/02_returns.sql` 建立。

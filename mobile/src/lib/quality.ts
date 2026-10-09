@@ -112,6 +112,26 @@ export function judge(metrics: QualityMetrics): QualityResult {
   return { verdict, metrics, issues };
 }
 
+// Quick check on a live camera frame, used for hints before the shutter is
+// pressed. Same metrics and thresholds as the check after capture.
+export function analyzeFrame(
+  source: CanvasImageSource,
+  sx: number,
+  sy: number,
+  sw: number,
+  sh: number,
+  canvas: HTMLCanvasElement,
+): QualityResult {
+  const scale = Math.min(1, ANALYSIS_LONG_SIDE / Math.max(sw, sh));
+  canvas.width = Math.max(1, Math.round(sw * scale));
+  canvas.height = Math.max(1, Math.round(sh * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas is not supported");
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return judge(analyzePixels(pixels.data, canvas.width, canvas.height));
+}
+
 function drawScaled(bitmap: ImageBitmap, longSide: number) {
   const scale = Math.min(1, longSide / Math.max(bitmap.width, bitmap.height));
   const width = Math.round(bitmap.width * scale);
@@ -125,9 +145,10 @@ function drawScaled(bitmap: ImageBitmap, longSide: number) {
   return { canvas, ctx, width, height };
 }
 
-export async function preparePhoto(file: File): Promise<PreparedPhoto> {
+// Accepts a picked file or a frame captured from the in-page camera.
+export async function preparePhoto(source: Blob): Promise<PreparedPhoto> {
   // Honour EXIF rotation so portrait phone shots stay upright.
-  const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  const bitmap = await createImageBitmap(source, { imageOrientation: "from-image" });
   try {
     const small = drawScaled(bitmap, ANALYSIS_LONG_SIDE);
     const pixels = small.ctx.getImageData(0, 0, small.width, small.height);

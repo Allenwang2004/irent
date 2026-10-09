@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { PHOTO_STEPS } from "@/lib/photo-steps";
 import { preparePhoto, type PreparedPhoto, type QualityResult } from "@/lib/quality";
 import { completeReturn, startReturn, type PhotoReport, type UploadTarget } from "../actions";
+import { CameraView, type CameraHandle } from "./camera-view";
 
 type Rental = { id: number; order_no: string; plate: string; car_model: string };
 
@@ -20,6 +21,10 @@ type StepState = {
 
 type Phase = "intro" | "capture" | "review" | "submitting" | "done";
 
+// The in-page camera is preferred so the guide can be overlaid; if it cannot
+// start, shooting falls back to the phone's own camera app.
+type CameraState = { status: "starting" | "ready" } | { status: "unavailable"; reason: string };
+
 const emptySteps = (): StepState[] => PHOTO_STEPS.map(() => ({ rejectedShots: 0, upload: "idle" }));
 
 export function ReturnFlow({ rental }: { rental: Rental }) {
@@ -29,7 +34,10 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
   const [current, setCurrent] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [camera, setCamera] = useState<CameraState>({ status: "starting" });
+  const cameraRef = useRef<CameraHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const albumInput = useRef<HTMLInputElement>(null);
 
   function updateStep(index: number, patch: Partial<StepState>) {
     setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -51,11 +59,35 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
   async function onFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (file) await checkShot(file);
+  }
+
+  async function shoot() {
+    if (camera.status !== "ready") {
+      fileInput.current?.click();
+      return;
+    }
+    try {
+      const blob = await cameraRef.current!.capture();
+      await checkShot(blob);
+    } catch {
+      setError("拍照失敗，請再試一次。");
+    }
+  }
+
+  // Back to the viewfinder; without the in-page camera, reopen the camera app.
+  function retake() {
+    const step = steps[current];
+    if (step.pending) URL.revokeObjectURL(step.pending.previewUrl);
+    updateStep(current, { pending: undefined });
+    if (camera.status !== "ready") fileInput.current?.click();
+  }
+
+  async function checkShot(source: Blob) {
     setBusy(true);
     setError(null);
     try {
-      const photo = await preparePhoto(file);
+      const photo = await preparePhoto(source);
       const step = steps[current];
       if (step.pending) URL.revokeObjectURL(step.pending.previewUrl);
       updateStep(current, {
@@ -124,14 +156,18 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
   }
 
   const input = (
-    <input
-      ref={fileInput}
-      type="file"
-      accept="image/*"
-      capture="environment"
-      className="hidden"
-      onChange={onFile}
-    />
+    <>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        className="hidden"
+        onChange={onFile}
+      />
+      {/* Prepared photos for demos, e.g. to show a blurry shot being rejected. */}
+      <input ref={albumInput} type="file" accept="image/*" className="hidden" onChange={onFile} />
+    </>
   );
 
   if (phase === "intro") {
@@ -173,7 +209,7 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
   if (phase === "capture") {
     const stepDef = PHOTO_STEPS[current];
     const step = steps[current];
-    const shown = step.pending ?? step.accepted;
+    const aiming = !step.pending && !busy;
     return (
       <main className="flex flex-1 flex-col bg-camera text-white">
         {input}
@@ -185,35 +221,47 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
           <p className="text-sm text-white/75">{stepDef.hint}</p>
         </header>
 
-        <div className="relative mx-4 flex aspect-[3/4] items-center justify-center overflow-hidden rounded-lg bg-camera-2">
-          {shown ? (
-            // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-            <img src={shown.previewUrl} alt={`${stepDef.title}照片`} className="h-full w-full object-contain" />
+        <div className="relative mx-4 aspect-[3/4] overflow-hidden rounded-lg bg-camera-2">
+          {camera.status === "unavailable" ? (
+            <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center text-sm text-white/70">
+              <p>{camera.reason}，改用手機相機拍照。</p>
+              <p>{stepDef.hint}</p>
+            </div>
           ) : (
-            <p className="px-8 text-center text-sm text-white/60">{stepDef.hint}</p>
+            <CameraView
+              ref={cameraRef}
+              imageType={stepDef.imageType}
+              plate={rental.plate}
+              liveCheck={aiming && camera.status === "ready"}
+              onReady={() => setCamera({ status: "ready" })}
+              onUnavailable={(reason) => setCamera({ status: "unavailable", reason })}
+            />
           )}
-          <span className="absolute bottom-3 rounded-full bg-black/60 px-3 py-1 text-sm">車號：{rental.plate}</span>
+          {step.pending && (
+            // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+            <img
+              src={step.pending.previewUrl}
+              alt={`${stepDef.title}照片`}
+              className="absolute inset-0 h-full w-full bg-camera-2 object-contain"
+            />
+          )}
         </div>
 
         <div className="mx-4 mt-3 min-h-20">
           {busy && <p className="text-sm text-white/75">檢查照片中...</p>}
           {!busy && step.pending && <QualityBanner quality={step.pending.quality} />}
           {!busy && !step.pending && step.accepted && (
-            <p className="text-sm text-white/75">已使用這張照片。可以重拍，或點下方縮圖切換。</p>
+            <p className="text-sm text-white/75">這個角度已經拍好了。可以重拍，或點下方縮圖切換。</p>
           )}
           {error && <p role="alert" className="text-sm text-critical">{error}</p>}
         </div>
 
         <Thumbnails steps={steps} current={current} onSelect={setCurrent} />
 
-        <div className="mt-auto flex items-center justify-center gap-6 px-4 pt-4 pb-8">
+        <div className="mt-auto grid grid-cols-3 items-center px-4 pt-4 pb-8">
           {step.pending ? (
-            <>
-              <button
-                type="button"
-                onClick={() => fileInput.current?.click()}
-                className="rounded-full border border-white/40 px-6 py-3 text-sm"
-              >
+            <div className="col-span-3 flex justify-center gap-6">
+              <button type="button" onClick={retake} className="rounded-full border border-white/40 px-6 py-3 text-sm">
                 重拍
               </button>
               {step.pending.quality.verdict !== "fail" && (
@@ -225,15 +273,26 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
                   {step.pending.quality.verdict === "warn" ? "仍使用這張" : "使用這張"}
                 </button>
               )}
-            </>
+            </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={busy}
-              aria-label="拍照"
-              className="h-18 w-18 rounded-full border-4 border-white bg-white/10 disabled:opacity-50"
-            />
+            <>
+              <button
+                type="button"
+                onClick={() => albumInput.current?.click()}
+                disabled={busy}
+                className="justify-self-start text-sm text-white/75"
+              >
+                從相簿選擇
+              </button>
+              <button
+                type="button"
+                onClick={shoot}
+                disabled={busy || camera.status === "starting"}
+                aria-label="拍照"
+                className="h-18 w-18 justify-self-center rounded-full border-4 border-white bg-white/10 disabled:opacity-50"
+              />
+              <span />
+            </>
           )}
         </div>
       </main>
@@ -255,6 +314,8 @@ export function ReturnFlow({ rental }: { rental: Rental }) {
                 type="button"
                 onClick={() => {
                   setCurrent(i);
+                  // The camera restarts when the viewfinder remounts.
+                  if (camera.status === "ready") setCamera({ status: "starting" });
                   setPhase("capture");
                 }}
                 className="block w-full text-left"
