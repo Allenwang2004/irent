@@ -16,6 +16,8 @@ type Props = {
   ref: Ref<CameraHandle>;
   // Alignment overlay; none for close-ups of a specific damage.
   guide: GuideKey | null;
+  // Previous photo of this view, drawn faintly so the new shot can match it.
+  reference?: string | null;
   plate: string;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
@@ -35,7 +37,7 @@ function visibleCrop(video: HTMLVideoElement) {
   return { sx: 0, sy: (vh - h) / 2, sw: vw, sh: h };
 }
 
-export function CameraView({ ref, guide, plate, liveCheck, onReady, onUnavailable }: Props) {
+export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, onUnavailable }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
@@ -140,6 +142,17 @@ export function CameraView({ ref, guide, plate, liveCheck, onReady, onUnavailabl
   return (
     <>
       <video ref={videoRef} muted playsInline autoPlay className="h-full w-full object-cover" />
+      {reference && (
+        // Same 3:4 framing and object-cover crop as the viewfinder, so the
+        // previous shot sits where the new one will be taken.
+        // eslint-disable-next-line @next/next/no-img-element -- short-lived signed URL
+        <img
+          src={reference}
+          alt=""
+          aria-hidden
+          className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
+        />
+      )}
       {guide !== null && <Guide guide={guide} />}
       {hint && (
         <div
