@@ -58,6 +58,35 @@ export async function handleAlert(formData: FormData) {
     .eq("id", alertId)
     .eq("status", "open");
   if (error) throw new Error(error.message);
+  // A false alarm needs no cleaning or repair; cancelling also lets the car be rented again.
+  if (decision === "dismissed") await cancelWorkOrders([alertId]);
+  refresh();
+}
+
+async function cancelWorkOrders(alertIds: number[]) {
+  if (!alertIds.length) return;
+  const { error } = await getSupabase()
+    .from("work_orders")
+    .update({ status: "cancelled", closed_at: new Date().toISOString(), note: "預警已駁回" })
+    .in("alert_id", alertIds)
+    .eq("status", "open");
+  if (error) throw new Error(error.message);
+}
+
+// Dismiss every open alert of one pickup or return at once.
+export async function dismissCase(formData: FormData) {
+  await requireSession();
+  const inspectionId = String(formData.get("inspection_id"));
+  const note = String(formData.get("note") ?? "").trim().slice(0, 500);
+  if (!/^[0-9a-f-]{36}$/.test(inspectionId)) throw new Error("Invalid case");
+  const { data, error } = await getSupabase()
+    .from("alerts")
+    .update({ status: "dismissed", note: note || "整筆駁回", handled_at: new Date().toISOString() })
+    .eq("inspection_id", inspectionId)
+    .eq("status", "open")
+    .select("id");
+  if (error) throw new Error(error.message);
+  await cancelWorkOrders((data ?? []).map((a) => a.id));
   refresh();
 }
 

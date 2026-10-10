@@ -56,6 +56,14 @@ async function VehicleContent({ params }: { params: Params }) {
             目前訂單 {rental.order_no}（{rental.status === "picking_up" ? "取車中" : "租用中"}，{formatTime(rental.started_at)} 開始）
           </p>
         )}
+        {vehicle.status === "maintenance" && (
+          <p className="mt-1 text-sm text-ink-2">
+            有清潔或檢修工單尚未完成，暫停出租中。
+            <Link href="/work-orders" className="ml-1 text-accent hover:underline">
+              前往工單
+            </Link>
+          </p>
+        )}
         <div className="mt-3 flex flex-wrap gap-2">
           {vehicle.status === "in_use" && (
             <form action={releaseVehicle}>

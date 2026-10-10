@@ -565,6 +565,19 @@ export function InspectionFlow({ kind, vehicle, knownDamages, rentalId, token }:
           <dd className="mt-1 text-2xl font-semibold">{totalRejected} 張</dd>
         </div>
       </dl>
+      {kind !== "registration" && started && (
+        <>
+          <p className="mt-8 text-sm text-ink-2">
+            照片會由 AI 檢查車況，結果會顯示在{kind === "pickup" ? "取車" : "還車"}確認頁，通常幾分鐘內完成。
+          </p>
+          <Link
+            href={`/records/${started.inspectionId}`}
+            className="mt-3 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
+          >
+            查看{kind === "pickup" ? "取車" : "還車"}確認
+          </Link>
+        </>
+      )}
       <Link href="/" className="mt-auto w-full rounded-full border border-line py-3 text-sm">
         回到首頁
       </Link>
