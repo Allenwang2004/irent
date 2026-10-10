@@ -37,6 +37,8 @@ type Props = {
   onAccept: () => void;
   onClose: () => void;
   closeLabel: string;
+  // Shown under the hint, e.g. the return countdown.
+  notice?: React.ReactNode;
 };
 
 // Full-screen viewfinder, one screen tall and never scrolling. Stays mounted
@@ -52,6 +54,7 @@ export function CaptureScreen({
   onAccept,
   onClose,
   closeLabel,
+  notice,
 }: Props) {
   const [camera, setCamera] = useState<CameraState>({ status: "starting" });
   const [showReference, setShowReference] = useState(true);
@@ -117,6 +120,7 @@ export function CaptureScreen({
           {shot.title}
         </h1>
         <p className="text-xs text-white/75">{shot.hint}</p>
+        {notice}
       </header>
 
       {/* Size the 3:4 viewfinder from the space available (container query units)

@@ -39,6 +39,12 @@ export const REQUIRED_STEPS: RequiredStep[] = [
 
 export const REQUIRED_SLOTS = REQUIRED_STEPS.map((s) => s.slot);
 
+// On return, the card and interior are shot before the renter locks the doors;
+// the corners after. Billing stops at the Return tap, so the renter gets a
+// short window to finish the interior and lock, or the return is cancelled.
+export const INTERIOR_SLOTS = ["card", "angle-10", "angle-11"];
+export const RETURN_LOCK_SECONDS = 5 * 60;
+
 export const ANGLE_LABELS: Record<number, string> = {
   1: "左前",
   2: "右前",
