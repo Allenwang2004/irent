@@ -388,5 +388,7 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
   } else {
     await supabase.from("rentals").update({ status: "returned", returned_at: now }).eq("id", inspection.rental_id!).eq("status", "in_use");
     await supabase.from("vehicles").update({ status: "available", updated_at: now }).eq("id", inspection.vehicle_id).eq("status", "in_use");
+    // Cleaning or repair still open (e.g. found at pickup) keeps the car paused.
+    await supabase.rpc("refresh_vehicle_block", { p_vehicle_id: inspection.vehicle_id });
   }
 }

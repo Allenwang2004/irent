@@ -4,7 +4,7 @@ import { Suspense } from "react";
 import { getSupabase } from "@/lib/supabase";
 import { CancelPickupButton } from "./cancel-pickup-button";
 
-type VehicleRow = { id: number; plate: string; car_model: string; status: "available" | "in_use" };
+type VehicleRow = { id: number; plate: string; car_model: string; status: "available" | "in_use" | "maintenance" };
 type RentalRow = { id: number; vehicle_id: number; order_no: string; status: "picking_up" | "in_use" };
 
 export default function Home() {
@@ -23,7 +23,7 @@ async function VehicleList() {
   await connection();
   const supabase = getSupabase();
   const [{ data: vehicles, error }, { data: rentals, error: rentalError }] = await Promise.all([
-    supabase.from("vehicles").select("id, plate, car_model, status").in("status", ["available", "in_use"]).order("plate"),
+    supabase.from("vehicles").select("id, plate, car_model, status").in("status", ["available", "in_use", "maintenance"]).order("plate"),
     supabase.from("rentals").select("id, vehicle_id, order_no, status").in("status", ["picking_up", "in_use"]),
   ]);
   if (error) throw new Error(error.message);
@@ -43,7 +43,13 @@ async function VehicleList() {
             <div className="text-lg font-semibold">{v.plate}</div>
             <div className="text-sm text-ink-2">
               {v.car_model}・
-              {v.status === "available" ? "可借用" : rental?.status === "picking_up" ? "取車中" : "租用中"}
+              {v.status === "available"
+                ? "可借用"
+                : v.status === "maintenance"
+                  ? "整備中（清潔或維修完成後可借用）"
+                  : rental?.status === "picking_up"
+                    ? "取車中"
+                    : "租用中"}
             </div>
             {rental && <div className="text-xs text-ink-3">訂單 {rental.order_no}</div>}
             {v.status === "available" && (

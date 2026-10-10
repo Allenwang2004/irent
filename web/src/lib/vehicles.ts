@@ -5,6 +5,7 @@ export const VEHICLE_STATUS_LABELS = {
   registering: "待登錄",
   available: "可借用",
   in_use: "使用中",
+  maintenance: "整備中",
   retired: "已停用",
 } as const;
 export type VehicleStatus = keyof typeof VEHICLE_STATUS_LABELS;
