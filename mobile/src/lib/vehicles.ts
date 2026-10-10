@@ -32,3 +32,18 @@ export async function getOpenRental(id: number) {
   if (error) throw new Error(error.message);
   return data as { id: number; vehicle_id: number; status: string } | null;
 }
+
+// A return whose doors were locked but whose exterior photos never went in
+// (page closed). The car is shut, so it cannot be redone from the app.
+export async function hasLockedReturn(rentalId: number) {
+  const { data, error } = await getSupabase()
+    .from("inspections")
+    .select("id")
+    .eq("rental_id", rentalId)
+    .eq("kind", "return")
+    .eq("status", "uploading")
+    .not("locked_at", "is", null)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return (data ?? []).length > 0;
+}

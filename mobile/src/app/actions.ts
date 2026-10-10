@@ -5,10 +5,12 @@ import {
   type InspectionKind,
   knownDamageSlot,
   extraSlot,
+  INTERIOR_SLOTS,
   MAX_EXTRA_PHOTOS,
   PHOTO_BUCKET,
   REQUIRED_SLOTS,
   REQUIRED_STEPS,
+  RETURN_LOCK_SECONDS,
   DAMAGE_AREAS,
   storagePath,
 } from "@/lib/inspection";
@@ -24,7 +26,17 @@ export type UploadTarget = { slot: string; signedUrl: string };
 // The previous photo of the same slot, shown faintly behind the live camera
 // so the renter can line the new shot up with it.
 export type Reference = { slot: string; url: string };
-export type Started = { inspectionId: string; targets: UploadTarget[]; references: Reference[] };
+export type Started = {
+  inspectionId: string;
+  targets: UploadTarget[];
+  references: Reference[];
+  // Return only: when billing stopped, and when the doors must be locked by.
+  startedAt?: string;
+  lockDeadline?: string;
+};
+
+// A little slack for the network round trip after the countdown reaches zero.
+const LOCK_GRACE_MS = 15 * 1000;
 
 const REFERENCE_URL_SECONDS = 2 * 60 * 60;
 
@@ -155,10 +167,23 @@ export async function startReturn(rentalId: number): Promise<Started> {
   if (rentalError) throw new Error(rentalError.message);
   if (!rental || rental.status !== "in_use") throw new Error("Rental is not in use");
 
+  // An earlier attempt that never locked the doors was cancelled (page closed or
+  // timed out); clear it. One that did lock cannot be redone: the car is shut.
+  const { data: open, error: openError } = await supabase
+    .from("inspections")
+    .select("id, locked_at")
+    .eq("rental_id", rental.id)
+    .eq("kind", "return")
+    .eq("status", "uploading");
+  if (openError) throw new Error(openError.message);
+  if (open?.some((i) => i.locked_at)) throw new Error("Doors already locked");
+  for (const i of open ?? []) await discardInspection("return", i.id);
+
+  // started_at is the Return tap: billing stops here.
   const { data: inspection, error } = await supabase
     .from("inspections")
     .insert({ vehicle_id: rental.vehicle_id, rental_id: rental.id, kind: "return" })
-    .select("id")
+    .select("id, started_at")
     .single();
   if (error) throw new Error(error.message);
 
@@ -167,7 +192,13 @@ export async function startReturn(rentalId: number): Promise<Started> {
     signedUploads("return", inspection.id, slots),
     referencePhotos(rental.vehicle_id, "return", rental.id),
   ]);
-  return { inspectionId: inspection.id, targets, references };
+  return {
+    inspectionId: inspection.id,
+    targets,
+    references,
+    startedAt: inspection.started_at,
+    lockDeadline: new Date(Date.parse(inspection.started_at) + RETURN_LOCK_SECONDS * 1000).toISOString(),
+  };
 }
 
 export async function startRegistration(vehicleId: number, token: string): Promise<Started> {
@@ -201,12 +232,53 @@ async function openInspection(inspectionId: string) {
   if (!UUID_RE.test(inspectionId)) throw new Error("Invalid inspection");
   const { data, error } = await getSupabase()
     .from("inspections")
-    .select("id, kind, status, vehicle_id, rental_id")
+    .select("id, kind, status, vehicle_id, rental_id, started_at, locked_at")
     .eq("id", inspectionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data || data.status !== "uploading") throw new Error("Inspection is not open");
-  return data as { id: string; kind: InspectionKind; status: string; vehicle_id: number; rental_id: number | null };
+  return data as {
+    id: string;
+    kind: InspectionKind;
+    status: string;
+    vehicle_id: number;
+    rental_id: number | null;
+    started_at: string;
+    locked_at: string | null;
+  };
+}
+
+export type LockResult = { ok: true } | { ok: false; reason: "expired" | "missing_photos" };
+
+// The renter has shot the interior and got out; lock the doors. Past the
+// deadline the return is cancelled instead and billing carries on.
+export async function lockReturn(inspectionId: string): Promise<LockResult> {
+  const inspection = await openInspection(inspectionId);
+  if (inspection.kind !== "return") throw new Error("Not a return");
+  if (inspection.locked_at) return { ok: true };
+
+  const deadline = Date.parse(inspection.started_at) + RETURN_LOCK_SECONDS * 1000;
+  if (Date.now() > deadline + LOCK_GRACE_MS) {
+    await discardInspection("return", inspection.id);
+    return { ok: false, reason: "expired" };
+  }
+
+  const supabase = getSupabase();
+  const { data: files, error: listError } = await supabase.storage
+    .from(PHOTO_BUCKET)
+    .list(`return/${inspection.id}`);
+  if (listError) throw new Error(listError.message);
+  const uploaded = new Set((files ?? []).map((f) => f.name.replace(/\.jpg$/, "")));
+  if (!INTERIOR_SLOTS.every((s) => uploaded.has(s))) return { ok: false, reason: "missing_photos" };
+
+  const { error } = await supabase
+    .from("inspections")
+    .update({ locked_at: new Date().toISOString() })
+    .eq("id", inspection.id)
+    .eq("status", "uploading")
+    .is("locked_at", null);
+  if (error) throw new Error(error.message);
+  return { ok: true };
 }
 
 export async function extraUploadUrl(inspectionId: string, index: number): Promise<UploadTarget> {
@@ -217,12 +289,13 @@ export async function extraUploadUrl(inspectionId: string, index: number): Promi
   return target;
 }
 
-// Abandoning a pickup releases the car again.
+// Abandoning a pickup releases the car again. Abandoning a return before the
+// doors lock means the renter keeps the car and billing carries on.
 export async function cancelInspection(inspectionId: string) {
   const inspection = await openInspection(inspectionId);
+  if (inspection.locked_at) throw new Error("Doors already locked");
   const supabase = getSupabase();
-  await removeFolder(inspection.kind, inspection.id);
-  await supabase.from("inspections").delete().eq("id", inspection.id);
+  await discardInspection(inspection.kind, inspection.id);
   if (inspection.kind === "pickup" && inspection.rental_id) {
     await supabase.from("rentals").update({ status: "cancelled" }).eq("id", inspection.rental_id).eq("status", "picking_up");
     await supabase.from("vehicles").update({ status: "available" }).eq("id", inspection.vehicle_id).eq("status", "in_use");
@@ -245,18 +318,17 @@ export async function cancelPickupRental(rentalId: number) {
     .eq("rental_id", rentalId)
     .eq("kind", "pickup")
     .eq("status", "uploading");
-  for (const i of open ?? []) {
-    await removeFolder("pickup", i.id);
-    await supabase.from("inspections").delete().eq("id", i.id);
-  }
+  for (const i of open ?? []) await discardInspection("pickup", i.id);
   await supabase.from("rentals").update({ status: "cancelled" }).eq("id", rentalId).eq("status", "picking_up");
   await supabase.from("vehicles").update({ status: "available" }).eq("id", rental.vehicle_id).eq("status", "in_use");
 }
 
-async function removeFolder(kind: InspectionKind, inspectionId: string) {
-  const bucket = getSupabase().storage.from(PHOTO_BUCKET);
+async function discardInspection(kind: InspectionKind, inspectionId: string) {
+  const supabase = getSupabase();
+  const bucket = supabase.storage.from(PHOTO_BUCKET);
   const { data } = await bucket.list(`${kind}/${inspectionId}`);
   if (data?.length) await bucket.remove(data.map((f) => `${kind}/${inspectionId}/${f.name}`));
+  await supabase.from("inspections").delete().eq("id", inspectionId);
 }
 
 export type PhotoReport = {
@@ -305,6 +377,7 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
     const expected = inspection.kind === "pickup" ? "picking_up" : "in_use";
     if (rental?.status !== expected) throw new Error("Rental is no longer open");
   }
+  if (inspection.kind === "return" && !inspection.locked_at) throw new Error("Doors not locked");
 
   if (!Array.isArray(reports) || reports.length > 50 || !reports.every(validReport)) {
     throw new Error("Invalid photo report");
@@ -386,7 +459,8 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
   } else if (inspection.kind === "pickup") {
     await supabase.from("rentals").update({ status: "in_use", picked_up_at: now }).eq("id", inspection.rental_id!).eq("status", "picking_up");
   } else {
-    await supabase.from("rentals").update({ status: "returned", returned_at: now }).eq("id", inspection.rental_id!).eq("status", "in_use");
+    // Billing stopped at the Return tap, not when the exterior photos went in.
+    await supabase.from("rentals").update({ status: "returned", returned_at: inspection.started_at }).eq("id", inspection.rental_id!).eq("status", "in_use");
     await supabase.from("vehicles").update({ status: "available", updated_at: now }).eq("id", inspection.vehicle_id).eq("status", "in_use");
     // Cleaning or repair still open (e.g. found at pickup) keeps the car paused.
     await supabase.rpc("refresh_vehicle_block", { p_vehicle_id: inspection.vehicle_id });
