@@ -117,7 +117,10 @@ export async function getRecord(inspectionId: string): Promise<RecordView | null
   const findings = KIND_ORDER.flatMap((k) => {
     const rows = byKind.get(k);
     const d = rows && describe(kind, k, rows);
-    return d ? [{ ...d, review: review(rows) }] : [];
+    if (!d) return [];
+    const r = review(rows);
+    // Once staff have ruled it out, the "we will check" wording no longer applies.
+    return [{ ...d, text: r === "dismissed" ? "營運人員確認後，這項沒有問題，不需要您處理。" : d.text, review: r }];
   });
 
   const list = photos ?? [];
