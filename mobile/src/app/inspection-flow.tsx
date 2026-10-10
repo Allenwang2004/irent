@@ -568,7 +568,7 @@ export function InspectionFlow({ kind, vehicle, knownDamages, rentalId, token }:
       {kind !== "registration" && started && (
         <>
           <p className="mt-8 text-sm text-ink-2">
-            照片會由 AI 檢查車況，結果會顯示在{kind === "pickup" ? "取車" : "還車"}確認頁，通常幾分鐘內完成。
+            照片會由 AI 檢查車況，通常幾分鐘內完成。之後也可以在首頁的「歷史訂單」查看。
           </p>
           <Link
             href={`/records/${started.inspectionId}`}

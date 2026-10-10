@@ -10,7 +10,12 @@ type RentalRow = { id: number; vehicle_id: number; order_no: string; status: "pi
 export default function Home() {
   return (
     <main className="flex flex-1 flex-col px-4 py-6">
-      <h1 className="text-2xl font-semibold">選擇車輛</h1>
+      <div className="flex items-baseline justify-between gap-3">
+        <h1 className="text-2xl font-semibold">選擇車輛</h1>
+        <Link href="/history" className="shrink-0 text-sm text-accent">
+          歷史訂單
+        </Link>
+      </div>
       <p className="mt-1 text-sm text-ink-2">展示用：只有已在後台登錄完成的車會出現在這裡。</p>
       <Suspense fallback={<p className="mt-6 text-sm text-ink-3">載入中...</p>}>
         <VehicleList />

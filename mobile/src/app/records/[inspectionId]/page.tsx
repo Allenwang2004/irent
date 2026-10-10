@@ -40,9 +40,10 @@ async function RecordContent({ params }: { params: Params }) {
     <main className="flex flex-1 flex-col px-4 py-6">
       {!record.analysisDone && !record.analysisFailed && <AutoRefresh seconds={5} />}
       {record.analysisDone && record.findings.some((f) => f.review === "pending") && <AutoRefresh seconds={30} />}
-      <Link href="/" className="text-sm text-ink-2">
-        回到首頁
-      </Link>
+      <div className="flex gap-4 text-sm text-ink-2">
+        <Link href="/history">歷史訂單</Link>
+        <Link href="/">回到首頁</Link>
+      </div>
       <h1 className="mt-4 text-xl font-semibold">{name}確認</h1>
       <p className="mt-1 text-sm text-ink-2">
         {record.plate}・{record.carModel}・{formatTime(record.submittedAt)}
