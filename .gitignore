@@ -1,6 +1,9 @@
 datasets/
 datasets.zip
 .DS_Store
-scraper/.venv/
+.venv/
 .vercel
-.env*
+.env
+.env.*
+!.env.example
+__pycache__/
