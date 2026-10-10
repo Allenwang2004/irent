@@ -1,0 +1,10 @@
+# Generated or large files
+remotion/node_modules/
+remotion/out/
+out/
+tools/tts/kokoro-multi-lang-v1_1/
+
+# Derived from the organiser's photos: competition use only, never publish
+remotion/public/private/
+lexicon-custom.txt
+tools/tts/preview_tw/
