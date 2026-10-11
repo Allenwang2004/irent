@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { RETURN_LOCK_SECONDS } from "@/lib/inspection";
+import { ReturnCar } from "../../icons";
 
 export function ElapsedTime({ since }: { since: string }) {
   const [now, setNow] = useState<number | null>(null);
@@ -18,9 +19,31 @@ export function ElapsedTime({ since }: { since: string }) {
   const total = now === null ? 0 : Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
   const pad = (n: number) => String(n).padStart(2, "0");
   return (
-    <div className="text-2xl font-semibold tabular-nums">
-      {now === null ? "--:--:--" : `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}`}
+    <div className="mt-1 text-[34px] font-extrabold tabular-nums text-[#141516]">
+      {now === null
+        ? "-- : -- : --"
+        : `${pad(Math.floor(total / 3600))} : ${pad(Math.floor(total / 60) % 60)} : ${pad(total % 60)}`}
     </div>
+  );
+}
+
+// Demo only: a day after pickup, as iRent shows it ("12/25 (四) 18:00").
+export function DueBack({ since }: { since: string }) {
+  const due = new Date(Date.parse(since) + 24 * 3600 * 1000);
+  const parts = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "numeric",
+    day: "numeric",
+    weekday: "narrow",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(due);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return (
+    <span className="text-irent-blue">
+      {get("month")}/{get("day")} ({get("weekday")}) {get("hour")}:{get("minute")}
+    </span>
   );
 }
 
@@ -34,8 +57,9 @@ export function StartReturnButton({ rentalId }: { rentalId: number }) {
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        className="rounded-full bg-accent py-3 font-medium text-accent-ink"
+        className="flex w-16 shrink-0 flex-col items-center gap-1 text-xs text-[#4d4f52]"
       >
+        <ReturnCar className="h-7 w-7 text-[#6b6d72]" />
         開始還車
       </button>
       {confirming && (
@@ -48,14 +72,14 @@ export function StartReturnButton({ rentalId }: { rentalId: number }) {
             <button
               type="button"
               onClick={() => router.push(`/return/${rentalId}?start=1`)}
-              className="mt-4 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
+              className="mt-4 flex h-12 w-full items-center justify-center rounded-full bg-accent text-[15px] text-accent-ink"
             >
               確認還車
             </button>
             <button
               type="button"
               onClick={() => setConfirming(false)}
-              className="mt-2 w-full rounded-full border border-line py-3 text-sm"
+              className="mt-2 flex h-12 w-full items-center justify-center rounded-full border border-line text-[15px]"
             >
               繼續用車
             </button>
