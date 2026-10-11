@@ -33,6 +33,7 @@ import {
 import { AppBar } from "./app-bar";
 import { CaptureScreen, type Shot } from "./capture-screen";
 import { CarArt } from "./car-art";
+import { Camera, CheckCircle, ChevronRight, Close, Pencil } from "./icons";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
 
@@ -86,7 +87,7 @@ const COPY = {
   },
   pickup: {
     title: "取車：檢查車輛狀況",
-    intro: "請仔細檢查有無損傷、凹陷等，完整拍照可保障自身權益。",
+    intro: "請仔細檢查有無損傷、凹陷等，\n完善拍照可保障自身權益。",
     close: "取消取車",
     done: (plate: string) => `已完成 ${plate} 的取車拍照，祝行車平安。`,
   },
@@ -122,6 +123,10 @@ export function InspectionFlow(props: Props) {
 // Short labels for the thumbnail strip.
 const SHORT: Record<string, string> = { card: "卡片" };
 const shortLabel = (slot: string, imageType?: number) => SHORT[slot] ?? (imageType ? ANGLE_LABELS[imageType] : "");
+
+// iRent's red pill button: 48px tall, 15px label.
+const PRIMARY =
+  "flex h-12 w-full items-center justify-center rounded-full bg-accent text-[15px] text-accent-ink disabled:opacity-50";
 
 const LOCK_CHECKLIST = ["隨身物品都已帶走", "加油卡、停車卡已放回卡夾", "車窗已關、引擎已熄火", "人已經下車並關好車門"];
 
@@ -448,36 +453,32 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
     // A return started from the in-use page skips this screen; show it only
     // while starting, or if starting failed.
     const starting = isReturn && autoStart && !error;
+    // Spacing follows iRent's 取車拍照 screen.
     return (
       <main className="flex flex-1 flex-col bg-surface-0">
         <AppBar
           title={kind === "pickup" ? "取車拍照" : kind === "return" ? "還車拍照" : "車輛登錄"}
           back={isReturn ? rentalPage : "/"}
-          progress={0.15}
+          progress={0.67}
         />
-        <div className="flex flex-1 flex-col items-center px-6 pt-8 pb-6 text-center">
-          <h2 className="text-2xl font-semibold">
+        <div className="flex flex-1 flex-col items-center px-[27px] pt-[43px] pb-8 text-center">
+          <h2 className="text-2xl leading-8 font-semibold text-[#222]">
             {kind === "pickup" ? "檢查車輛狀況" : kind === "return" ? "還車檢查" : copy.title}
           </h2>
-          <p className="mt-2 max-w-xs text-sm text-ink-2">{copy.intro}</p>
-          <CarArt plate={vehicle.plate} className="mt-8 w-full max-w-xs" />
-          <p className="mt-4 text-sm text-ink-2">車號：{vehicle.plate}</p>
+          <p className="mt-2.5 text-sm leading-5 whitespace-pre-line text-ink-2">{copy.intro}</p>
+          <CarArt plate={vehicle.plate} className="mt-[64px] w-[280px] max-w-full" />
+          <p className="mt-6 text-[15px] text-ink-2">車號：{vehicle.plate}</p>
           {knownDamages.length > 0 && kind === "pickup" && (
             <p className="mt-2 text-xs text-ink-3">
               這台車已記錄 {knownDamages.length} 處損傷，拍完車況後可以把它們拍下來，保障自身權益。
             </p>
           )}
-          <div className="mt-auto w-full pt-8">
+          <div className="mt-[84px] w-full">
             {error && <p role="alert" className="mb-3 text-sm text-critical">{error}</p>}
             {starting ? (
               <p className="py-3 text-sm text-ink-2">準備還車中...</p>
             ) : (
-              <button
-                type="button"
-                onClick={isReturn ? () => setConfirmReturn(true) : begin}
-                disabled={busy}
-                className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-60"
-              >
+              <button type="button" onClick={isReturn ? () => setConfirmReturn(true) : begin} disabled={busy} className={PRIMARY}>
                 {busy ? "準備中..." : kind === "pickup" ? "拍攝車輛狀況" : isReturn ? "還車" : "開始拍照"}
               </button>
             )}
@@ -511,7 +512,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
             {started?.startedAt ? `從 ${formatClock(started.startedAt)} 按下還車到現在` : "這段時間"}照常計費。
           </p>
           <p className="mt-2 text-sm text-ink-2">準備好後可以重新還車。</p>
-          <Link href={rentalPage} className="mt-auto w-full rounded-full bg-accent py-3 font-medium text-accent-ink">
+          <Link href={rentalPage} className={`mt-auto ${PRIMARY}`}>
             回到用車頁
           </Link>
         </div>
@@ -568,7 +569,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
               type="button"
               onClick={lock}
               disabled={busy}
-              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+              className={PRIMARY}
             >
               {busy ? "鎖門中..." : "確認，鎖門"}
             </button>
@@ -746,7 +747,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
               type="button"
               onClick={afterDamages}
               disabled={missingLocation}
-              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+              className={PRIMARY}
             >
               下一步
             </button>
@@ -756,42 +757,64 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
     );
   }
 
-  // iRent's 確認取車: only the confirm button does anything in the demo.
+  // iRent's 確認取車: only the confirm button does anything in the demo; the
+  // rows, prices and signature are shown as in the app.
   if ((phase === "confirm" || (phase === "submitting" && kind === "pickup")) && kind === "pickup") {
+    const dueBack = new Date(Math.ceil((now + 24 * 3600 * 1000) / 3600000) * 3600000);
     return (
       <main className="flex flex-1 flex-col bg-surface-0">
-        <AppBar title="確認取車" onBack={() => setPhase("damages")} progress={0.9} />
-        <div className="flex flex-1 flex-col px-4 py-5">
-          <ul className="divide-y divide-line rounded-xl bg-surface-1 text-sm">
-            <ConfirmRow label="查看租車合約" />
-            <ConfirmRow label="查詢／邀請共同承租人" note="邀請共同承租人，未來可以一起用車" />
-            <ConfirmRow label="預設還車時間" value="未設定" />
-            <ConfirmRow label="確認簽名" value="已簽名" />
-            <ConfirmRow label="安心服務・$50/hr" value="已加購" />
-            <ConfirmRow label="行車記錄器・$100/日" value="已加購" />
+        <AppBar title="確認取車" onBack={() => setPhase("damages")} progress={1} />
+        <div className="flex flex-1 flex-col">
+          <ul className="mx-[23px] mt-8 divide-y divide-line rounded-lg bg-white">
+            <ConfirmRow label="查看租車合約" chevron />
+            <ConfirmRow label="查詢/邀請共同承租人" note="還有人未回覆邀請哦！快通知對方至通知中心確認" chevron />
+            <ConfirmRow label="預設還車時間">
+              <span className="flex items-center gap-1.5 text-base text-irent-blue">
+                {formatDue(dueBack)}
+                <Pencil className="h-4 w-4" />
+              </span>
+            </ConfirmRow>
+            <ConfirmRow label="確認簽名">
+              <Signature className="h-8 w-20 text-[#222]" />
+            </ConfirmRow>
+            <ConfirmRow label="安心服務" price="$50" unit="/hr">
+              <AddOn />
+            </ConfirmRow>
+            <ConfirmRow label="行車記錄器" price="$100" unit="/日">
+              <AddOn />
+            </ConfirmRow>
           </ul>
-          <ul className="mt-5 flex flex-col gap-3 text-sm text-ink-2">
+          <ul className="mt-[22px] flex flex-col gap-3 pr-[26px] pl-[33px] text-sm leading-[23px] text-[#555]">
             {[
               "我已確認租車合約無誤",
               "我確實遵守「酒後不駕車」的安全法則",
               "我同意不懸掛偽造、已吊扣、報廢、其他車輛之車牌，及污損車牌行為",
-              "我同意訂單異動時，由和雲行動服務代為處理發票及銷貨退回證明單",
+              "我同意訂單異動時，由和雲行動服務代為處理發票及銷貨退回證明單，以加速退款作業",
             ].map((t) => (
-              <li key={t}>
-                <label className="flex gap-3">
-                  <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" />
-                  {t}
-                </label>
+              <li key={t} className="flex items-center gap-3">
+                <CheckCircle className="h-[19px] w-[19px] shrink-0 text-irent-blue" />
+                {t}
               </li>
             ))}
+            <li className="flex items-center gap-3">
+              <CheckCircle className="h-[19px] w-[19px] shrink-0 text-irent-blue" />
+              <span>
+                我同意<span className="text-irent-blue underline underline-offset-2">行車紀錄器啟用須知</span>
+              </span>
+            </li>
           </ul>
-          <p className="mt-4 text-xs text-ink-3">
-            取車照片 {allSlots.length} 張
-            {uploadsBusy ? "，上傳中..." : failedUploads.length ? `，${failedUploads.length} 張上傳失敗` : "，已上傳"}
-          </p>
-          <div className="mt-auto pt-6">
+          <div className="mt-auto bg-white px-[23px] pt-[15px] pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+            {!uploadsReady && (
+              <p className="mb-2 text-center text-xs text-ink-2">
+                {failedUploads.length ? `${failedUploads.length} 張照片上傳失敗` : "取車照片上傳中..."}
+              </p>
+            )}
             {failedUploads.length > 0 && (
-              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+              <button
+                type="button"
+                onClick={retryFailed}
+                className="mb-3 flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]"
+              >
                 重新上傳失敗的照片
               </button>
             )}
@@ -800,9 +823,9 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
               type="button"
               onClick={() => submit("confirm")}
               disabled={!uploadsReady || phase === "submitting"}
-              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+              className={PRIMARY}
             >
-              {phase === "submitting" ? "取車中..." : uploadsBusy ? "照片上傳中..." : "確認取車"}
+              {phase === "submitting" ? "取車中..." : "確認取車"}
             </button>
           </div>
         </div>
@@ -815,38 +838,50 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
   if ((phase === "parking" || (phase === "submitting" && isReturn)) && isReturn) {
     const hasPhoto = parkingSlots.length > 0;
     return (
-      <main className="flex flex-1 flex-col bg-surface-0">
-        <AppBar title="提供停車位置" onBack={() => setPhase("damages")} progress={0.9} />
+      <main className="flex flex-1 flex-col bg-white">
+        <AppBar title="提供停車位置" onBack={() => setPhase("damages")} progress={0.5} />
         <input ref={parkingInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={onParkingFile} />
-        <div className="flex flex-1 flex-col px-5 py-6">
-          <h2 className="text-center text-xl font-semibold">幫助下一位用戶找車吧</h2>
-          <p className="mt-4 text-sm text-ink-2">
-            <span className="font-medium text-accent">路邊停車</span>：請描述停車位置並拍攝車輛停放環境（含車輛）
-          </p>
-          <p className="mt-2 text-sm text-ink-2">
-            <span className="font-medium text-accent">停車場停車</span>：請描述「還車樓層和停車格號碼」並拍攝車輛停放環境（含車輛）
-          </p>
+        <div className="flex flex-1 flex-col px-[25px] pt-[70px] pb-[max(4.5rem,env(safe-area-inset-bottom))]">
+          <h2 className="text-center text-2xl leading-8 font-semibold text-[#222]">幫助下一位用戶找車吧</h2>
+          <div className="mt-6 px-2.5 text-[13px] leading-5 text-ink-2">
+            <p>
+              <span className="text-accent">路邊停車</span>：請【描述】停車位置並【拍攝】車輛停放環境（含車輛）
+            </p>
+            <p className="mt-[18px]">
+              <span className="text-accent">停車場停車</span>：請【描述】
+              <span className="font-semibold text-[#222]">「還車樓層和停車格號碼」</span>
+              並【拍攝】車輛停放環境（含車輛）
+            </p>
+          </div>
           <input
             value={parkingNote}
             maxLength={100}
             onChange={(e) => setParkingNote(e.target.value)}
-            placeholder="例如：長安東路 150 號 7-11 附近／B3-151（選填）"
-            className="mt-4 rounded-lg bg-surface-2 px-3 py-3 text-sm"
+            placeholder="長安東路150號7-11附近"
+            aria-label="停車位置說明（選填）"
+            className="mt-[23px] h-[47px] rounded-md bg-surface-2 px-3 text-sm text-[#333] outline-none placeholder:text-ink-3"
           />
-          <ul className="mt-5 flex flex-wrap gap-3">
+          <div className="-mx-[25px] mt-[25px] flex items-center gap-3 text-xs text-ink-3">
+            <span className="h-px flex-1 bg-line" />且<span className="h-px flex-1 bg-line" />
+          </div>
+          <ul className="mt-[31px] flex flex-wrap gap-6 px-2">
             {parkingSlots.map((slot) => (
-              <li key={slot} className="relative">
-                {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
-                <img src={slots[slot].accepted!.previewUrl} alt="停車環境照片" className="h-20 w-20 rounded-md object-cover" />
-                <button
-                  type="button"
-                  onClick={() => removeParking(slot)}
-                  className="absolute -top-2 -right-2 rounded-full bg-surface-1 px-1.5 text-xs shadow"
-                  aria-label="移除這張照片"
-                >
-                  移除
-                </button>
-                <UploadNote state={slots[slot].upload} />
+              <li key={slot} className="w-16">
+                <div className="relative h-16 w-16">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
+                  <img src={slots[slot].accepted!.previewUrl} alt="停車環境照片" className="h-16 w-16 rounded-sm object-cover" />
+                  <button
+                    type="button"
+                    onClick={() => removeParking(slot)}
+                    aria-label="移除這張照片"
+                    className="absolute -top-1.5 -right-1.5 flex h-[18px] w-[18px] items-center justify-center rounded-full bg-[#9a9ca0] text-white"
+                  >
+                    <Close className="h-2.5 w-2.5" />
+                  </button>
+                </div>
+                <p className={`mt-3 text-center text-sm ${slots[slot].upload === "error" ? "text-critical" : "text-ink-2"}`}>
+                  {slots[slot].upload === "error" ? "上傳失敗" : "直接拍攝"}
+                </p>
               </li>
             ))}
             {parkingSlots.length < MAX_PARKING_PHOTOS && (
@@ -854,17 +889,21 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
                 <button
                   type="button"
                   onClick={() => parkingInput.current?.click()}
-                  className="flex h-20 w-20 items-center justify-center rounded-md bg-surface-2 text-xs text-ink-2"
+                  aria-label="拍攝停車環境"
+                  className="flex h-16 w-16 items-center justify-center rounded-sm bg-surface-2 text-[#b5b7bb]"
                 >
-                  直接拍攝
+                  <Camera className="h-7 w-7" />
                 </button>
               </li>
             )}
           </ul>
-          {!hasPhoto && <p className="mt-2 text-xs text-ink-3">請至少拍一張停車環境照片。</p>}
           <div className="mt-auto pt-6">
             {failedUploads.length > 0 && (
-              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+              <button
+                type="button"
+                onClick={retryFailed}
+                className="mb-3 flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]"
+              >
                 重新上傳失敗的照片
               </button>
             )}
@@ -873,12 +912,12 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
               type="button"
               onClick={() => submit("parking")}
               disabled={!hasPhoto || !uploadsReady || phase === "submitting"}
-              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+              className={PRIMARY}
             >
               {phase === "submitting" ? "送出中..." : uploadsBusy ? "照片上傳中..." : "下一步"}
             </button>
             {/* Shown as in iRent; the demo requires a parking photo. */}
-            <p className="mt-3 text-center text-sm text-ink-3">略過</p>
+            <p className="mt-[14px] text-center text-sm text-ink-2">略過</p>
           </div>
         </div>
       </main>
@@ -918,7 +957,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
           </ul>
           <div className="mt-auto pt-6">
             {failedUploads.length > 0 && (
-              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+              <button type="button" onClick={retryFailed} className="mb-3 flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]">
                 重新上傳失敗的照片
               </button>
             )}
@@ -927,7 +966,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
               type="button"
               onClick={() => submit("review")}
               disabled={!uploadsReady || phase === "submitting"}
-              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+              className={PRIMARY}
             >
               {phase === "submitting" ? "送出中..." : uploadsBusy ? "照片上傳中..." : "完成登錄"}
             </button>
@@ -961,13 +1000,13 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
             <p className="mt-8 text-sm text-ink-2">照片會由 AI 檢查車況，通常幾分鐘內完成。之後也可以在首頁的「歷史訂單」查看。</p>
             <Link
               href={`/records/${started.inspectionId}`}
-              className="mt-3 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
+              className={`mt-3 ${PRIMARY}`}
             >
               查看還車確認
             </Link>
           </>
         )}
-        <Link href="/" className="mt-auto w-full rounded-full border border-line py-3 text-sm">
+        <Link href="/" className="mt-auto flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]">
           回到首頁
         </Link>
       </div>
@@ -975,16 +1014,75 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props
   );
 }
 
-function ConfirmRow({ label, value, note }: { label: string; value?: string; note?: string }) {
+// One row of iRent's confirm-pickup card: 56px tall, 16px label.
+function ConfirmRow({
+  label,
+  note,
+  price,
+  unit,
+  chevron = false,
+  children,
+}: {
+  label: string;
+  note?: string;
+  price?: string;
+  unit?: string;
+  chevron?: boolean;
+  children?: React.ReactNode;
+}) {
   return (
-    <li className="flex items-center justify-between gap-3 px-4 py-3.5">
+    <li className="flex min-h-14 items-center justify-between gap-3 px-[25px] py-3">
       <div>
-        <div>{label}</div>
-        {note && <div className="text-xs text-critical">{note}</div>}
+        <div className="text-base font-medium text-[#333]">
+          {label}
+          {price && (
+            <>
+              ・{price}
+              <span className="text-xs font-normal text-ink-2">{unit}</span>
+            </>
+          )}
+        </div>
+        {note && <div className="mt-0.5 text-[11px] text-accent">{note}</div>}
       </div>
-      {value && <span className="text-sm text-ink-2">{value}</span>}
+      {children}
+      {chevron && <ChevronRight className="h-4 w-4 shrink-0 text-[#b0b2b6]" />}
     </li>
   );
+}
+
+// "Added" with a switched-on toggle, as on iRent's add-on rows.
+function AddOn() {
+  return (
+    <span className="flex items-center gap-2 text-sm text-irent-blue">
+      已加購
+      <span className="flex h-6 w-[42px] items-center justify-end rounded-full bg-irent-blue p-0.5" aria-hidden>
+        <span className="h-5 w-5 rounded-full bg-white shadow" />
+      </span>
+    </span>
+  );
+}
+
+// A handwritten-looking stroke standing in for the renter's signature.
+function Signature({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 80 32" className={className} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-label="已簽名">
+      <path d="M4 22c4-9 7-14 9-13s-3 14 0 14 6-12 9-12-1 10 2 10 5-8 8-8 0 7 3 7 4-9 7-9-2 9 1 9 5-6 8-6 2 5 5 5 5-3 8-4" />
+      <path d="M30 6c-2 6-3 12-2 20M58 5l-3 21" />
+    </svg>
+  );
+}
+
+function formatDue(d: Date) {
+  const p = new Intl.DateTimeFormat("zh-TW", {
+    timeZone: "Asia/Taipei",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  return `${get("month")}/${get("day")} ${get("hour")}:${get("minute")}`;
 }
 
 function labelFor(slot: string, knownDamages: KnownDamage[], extras: Extra[]) {
@@ -1017,10 +1115,10 @@ function CloseSheet({
       <div className="w-full max-w-md rounded-t-2xl bg-surface-1 p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
         <p className="text-center font-medium">確定要{label}嗎？</p>
         <p className="mt-1 text-center text-sm text-ink-2">{note}</p>
-        <button type="button" onClick={onConfirm} className="mt-4 w-full rounded-full bg-accent py-3 font-medium text-accent-ink">
+        <button type="button" onClick={onConfirm} className={`mt-4 ${PRIMARY}`}>
           {label}
         </button>
-        <button type="button" onClick={onCancel} className="mt-2 w-full rounded-full border border-line py-3 text-sm">
+        <button type="button" onClick={onCancel} className="mt-2 flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]">
           繼續拍照
         </button>
       </div>
@@ -1054,11 +1152,11 @@ function Sheet({
           type="button"
           onClick={onConfirm}
           disabled={busy}
-          className="mt-4 w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-60"
+          className={`mt-4 ${PRIMARY}`}
         >
           {confirmLabel}
         </button>
-        <button type="button" onClick={onCancel} disabled={busy} className="mt-2 w-full rounded-full border border-line py-3 text-sm">
+        <button type="button" onClick={onCancel} disabled={busy} className="mt-2 flex h-12 w-full items-center justify-center rounded-full border border-line bg-white text-[15px]">
           {cancelLabel}
         </button>
       </div>

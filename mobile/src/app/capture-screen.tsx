@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import type { GuideKey } from "@/lib/inspection";
 import { preparePhoto, type PreparedPhoto, type QualityResult } from "@/lib/quality";
 import { CameraView, type CameraHandle } from "./camera-view";
+import { FlashOff, FlashOn } from "./icons";
 
 export type Shot = {
   slot: string;
@@ -119,12 +120,12 @@ export function CaptureScreen({
 
       {/* Layout follows iRent's own photo screen: title and instructions in the
           middle, "done" on the right. */}
-      <header className="grid shrink-0 grid-cols-[4rem_1fr_4rem] items-start px-3 pt-3 pb-2">
-        <button type="button" onClick={onClose} className="justify-self-start pt-0.5 text-sm text-white/75">
+      <header className="grid shrink-0 grid-cols-[4.5rem_1fr_4.5rem] items-start px-4 pt-4 pb-3">
+        <button type="button" onClick={onClose} className="justify-self-start text-[15px] leading-6 text-white">
           {closeLabel}
         </button>
         <div className="text-center">
-          <h1 className="text-base font-semibold">
+          <h1 className="text-base leading-6 font-semibold">
             {shot.title}
             {progress && (
               <span className="ml-1.5 text-xs font-normal text-white/60">
@@ -132,7 +133,7 @@ export function CaptureScreen({
               </span>
             )}
           </h1>
-          <p className="text-xs text-white/80">{shot.hint}</p>
+          <p className="mt-0.5 text-[13px] leading-[18px] text-white/85">{shot.hint}</p>
           {notice}
         </div>
         {onDone ? (
@@ -140,7 +141,7 @@ export function CaptureScreen({
             type="button"
             onClick={onDone}
             disabled={!doneEnabled}
-            className="justify-self-end pt-0.5 text-sm disabled:text-white/35"
+            className="justify-self-end text-[15px] leading-6 text-white disabled:text-white/35"
           >
             {doneLabel}
           </button>
@@ -200,7 +201,7 @@ export function CaptureScreen({
 
       {progress && <Thumbnails progress={progress} current={shot.slot} />}
 
-      <div className="grid h-24 shrink-0 grid-cols-3 items-center px-5 pb-[env(safe-area-inset-bottom)]">
+      <div className="grid h-28 shrink-0 grid-cols-3 items-center px-5 pb-[env(safe-area-inset-bottom)]">
         {pending ? (
           <div className="col-span-3 flex justify-center gap-6">
             <button type="button" onClick={retake} className="rounded-full border border-white/40 px-6 py-3 text-sm">
@@ -218,31 +219,32 @@ export function CaptureScreen({
           </div>
         ) : (
           <>
-            {torch.supported && camera.status === "ready" ? (
-              <button
-                type="button"
-                onClick={toggleTorch}
-                aria-pressed={torch.on}
-                className={`justify-self-start text-sm ${torch.on ? "text-white" : "text-white/70"}`}
-              >
-                {torch.on ? "補光：開" : "補光：關"}
-              </button>
-            ) : (
-              <span />
-            )}
+            {/* iRent always shows the flash; it only works where the phone lets the page use it. */}
+            <button
+              type="button"
+              onClick={toggleTorch}
+              disabled={!torch.supported || camera.status !== "ready"}
+              aria-pressed={torch.on}
+              aria-label={torch.on ? "關閉閃光燈" : "開啟閃光燈"}
+              className="h-10 w-10 justify-self-center text-white disabled:opacity-100"
+            >
+              {torch.on ? <FlashOn className="mx-auto h-6 w-6" /> : <FlashOff className="mx-auto h-6 w-6" />}
+            </button>
             <button
               type="button"
               onClick={shoot}
               disabled={busy || camera.status === "starting"}
               aria-label="拍照"
-              className="h-18 w-18 justify-self-center rounded-full border-4 border-white bg-white/10 disabled:opacity-50"
-            />
+              className="flex h-[72px] w-[72px] items-center justify-center justify-self-center rounded-full border-[3px] border-white disabled:opacity-50"
+            >
+              <span className="h-[58px] w-[58px] rounded-full bg-white" />
+            </button>
             {shot.reference && camera.status !== "unavailable" ? (
               <button
                 type="button"
                 onClick={() => setShowReference((v) => !v)}
                 aria-pressed={showReference}
-                className="justify-self-end text-right text-sm text-white/70"
+                className="justify-self-center text-center text-[13px] leading-4 text-white/80"
               >
                 {showReference ? "隱藏上次照片" : "顯示上次照片"}
               </button>
@@ -281,18 +283,19 @@ export function QualityBanner({ quality }: { quality: QualityResult }) {
 }
 
 // Strip of the stage's shots under the viewfinder, as in iRent: tap one to
-// retake it.
+// retake it. Scrolls sideways when the stage has more shots than fit.
 function Thumbnails({ progress, current }: { progress: Progress; current: string }) {
   return (
-    <ol className="mt-2 flex shrink-0 justify-center gap-1.5 px-3">
+    <ol className="no-scrollbar mt-2 flex shrink-0 gap-2 overflow-x-auto px-1.5 py-1">
       {progress.thumbs.map((t) => (
-        <li key={t.slot} className="max-w-14 min-w-0 flex-1">
+        <li key={t.slot} className="shrink-0">
           <button
             type="button"
             onClick={() => progress.onSelect(t.slot)}
+            ref={t.slot === current ? (el) => el?.scrollIntoView({ inline: "nearest", block: "nearest" }) : undefined}
             aria-label={`${t.label}${t.previewUrl ? "（已拍）" : ""}`}
             aria-current={t.slot === current ? "step" : undefined}
-            className={`flex aspect-square w-full items-center justify-center overflow-hidden rounded bg-camera-2 text-[11px] text-white/70 ${
+            className={`flex h-[68px] w-[68px] items-center justify-center overflow-hidden rounded-md bg-camera-2 text-xs text-white/70 ${
               t.slot === current ? "ring-2 ring-white" : ""
             }`}
           >
