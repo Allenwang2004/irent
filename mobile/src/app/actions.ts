@@ -5,8 +5,8 @@ import {
   type InspectionKind,
   knownDamageSlot,
   extraSlot,
-  INTERIOR_SLOTS,
   MAX_EXTRA_PHOTOS,
+  PARKING_SLOTS,
   PHOTO_BUCKET,
   REQUIRED_SLOTS,
   REQUIRED_STEPS,
@@ -28,6 +28,8 @@ export type UploadTarget = { slot: string; signedUrl: string };
 export type Reference = { slot: string; url: string };
 export type Started = {
   inspectionId: string;
+  // Pickup only: the rental the car is now booked under.
+  rentalId?: number;
   targets: UploadTarget[];
   references: Reference[];
   // Return only: when billing stopped, and when the doors must be locked by.
@@ -187,7 +189,7 @@ export async function startReturn(rentalId: number): Promise<Started> {
     .single();
   if (error) throw new Error(error.message);
 
-  const slots = [...REQUIRED_SLOTS, ...(await activeDamageSlots(rental.vehicle_id))];
+  const slots = [...REQUIRED_SLOTS, ...(await activeDamageSlots(rental.vehicle_id)), ...PARKING_SLOTS];
   const [targets, references] = await Promise.all([
     signedUploads("return", inspection.id, slots),
     referencePhotos(rental.vehicle_id, "return", rental.id),
@@ -248,10 +250,12 @@ async function openInspection(inspectionId: string) {
   };
 }
 
-export type LockResult = { ok: true } | { ok: false; reason: "expired" | "missing_photos" };
+export type LockResult = { ok: true } | { ok: false; reason: "expired" };
 
 // The renter has shot the interior and got out; lock the doors. Past the
-// deadline the return is cancelled instead and billing carries on.
+// deadline the return is cancelled instead and billing carries on. Locking does
+// not wait for the interior photos to finish uploading (an underground car park
+// may have a weak signal); the final submit checks that every photo arrived.
 export async function lockReturn(inspectionId: string): Promise<LockResult> {
   const inspection = await openInspection(inspectionId);
   if (inspection.kind !== "return") throw new Error("Not a return");
@@ -263,15 +267,7 @@ export async function lockReturn(inspectionId: string): Promise<LockResult> {
     return { ok: false, reason: "expired" };
   }
 
-  const supabase = getSupabase();
-  const { data: files, error: listError } = await supabase.storage
-    .from(PHOTO_BUCKET)
-    .list(`return/${inspection.id}`);
-  if (listError) throw new Error(listError.message);
-  const uploaded = new Set((files ?? []).map((f) => f.name.replace(/\.jpg$/, "")));
-  if (!INTERIOR_SLOTS.every((s) => uploaded.has(s))) return { ok: false, reason: "missing_photos" };
-
-  const { error } = await supabase
+  const { error } = await getSupabase()
     .from("inspections")
     .update({ locked_at: new Date().toISOString() })
     .eq("id", inspection.id)
@@ -344,6 +340,9 @@ export type PhotoReport = {
   note?: string;
 };
 
+// Return only: where the car was left, for the next renter.
+export type ParkingInfo = { note: string };
+
 function finite(n: unknown, min = 0, max = Number.MAX_SAFE_INTEGER) {
   return typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
 }
@@ -367,7 +366,7 @@ function validReport(r: PhotoReport) {
   );
 }
 
-export async function completeInspection(inspectionId: string, reports: PhotoReport[]) {
+export async function completeInspection(inspectionId: string, reports: PhotoReport[], parking?: ParkingInfo) {
   const inspection = await openInspection(inspectionId);
   const supabase = getSupabase();
 
@@ -385,6 +384,8 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
   const slots = new Set(reports.map((r) => r.slot));
   if (slots.size !== reports.length) throw new Error("Duplicate photo");
   if (!REQUIRED_SLOTS.every((s) => slots.has(s))) throw new Error("Missing required photos");
+  const parkingNote = typeof parking?.note === "string" ? parking.note.trim().slice(0, 100) : "";
+  if (inspection.kind === "return" && !PARKING_SLOTS.some((s) => slots.has(s))) throw new Error("Missing parking photo");
 
   const damageSlots = new Map(
     inspection.kind === "registration"
@@ -396,6 +397,7 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
     const ok =
       REQUIRED_SLOTS.includes(r.slot) ||
       damageSlots.has(r.slot) ||
+      (inspection.kind === "return" && PARKING_SLOTS.includes(r.slot)) ||
       (inspection.kind !== "registration" && extraSlots.has(r.slot) &&
         (DAMAGE_AREAS as readonly string[]).includes(r.location ?? ""));
     if (!ok) throw new Error(`Unexpected photo ${r.slot}`);
@@ -412,7 +414,13 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
   const stepBySlot = new Map(REQUIRED_STEPS.map((s) => [s.slot, s]));
   const rows = reports.map((r) => {
     const step = stepBySlot.get(r.slot);
-    const category = step ? step.category : damageSlots.has(r.slot) ? "known_damage" : "extra";
+    const category = step
+      ? step.category
+      : damageSlots.has(r.slot)
+        ? "known_damage"
+        : PARKING_SLOTS.includes(r.slot)
+          ? "parking"
+          : "extra";
     return {
       inspection_id: inspection.id,
       slot: r.slot,
@@ -445,6 +453,7 @@ export async function completeInspection(inspectionId: string, reports: PhotoRep
     .update({
       status: "submitted",
       submitted_at: now,
+      ...(inspection.kind === "return" ? { parking_note: parkingNote || null } : {}),
       // Registration photos are the baseline; nothing to analyse.
       ...(inspection.kind === "registration" ? { analysis_status: "done", analysis_finished_at: now } : {}),
     })

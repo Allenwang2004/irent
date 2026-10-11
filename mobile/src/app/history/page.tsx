@@ -64,8 +64,8 @@ function RentalCard({ rental: r }: { rental: HistoryRental }) {
         <ReceiptLink label="還車確認" receipt={r.return} />
       </div>
       {r.status === "in_use" && (
-        <Link href={`/return/${r.id}`} className="mt-3 block rounded-full bg-accent py-2.5 text-center text-sm font-medium text-accent-ink">
-          我要還車
+        <Link href={`/rental/${r.id}`} className="mt-3 block rounded-full bg-accent py-2.5 text-center text-sm font-medium text-accent-ink">
+          用車中，查看
         </Link>
       )}
     </li>

@@ -77,6 +77,9 @@ async function RecordContent({ params }: { params: Params }) {
         </ul>
       )}
 
+      {record.kind === "return" && record.parkingNote && (
+        <p className="mt-8 text-sm text-ink-2">停車位置：{record.parkingNote}</p>
+      )}
       <h2 className="mt-8 text-sm font-semibold">您上傳的照片（{record.photos.length} 張）</h2>
       <p className="mt-1 text-xs text-ink-3">這些照片是這次{name}的車況證明。</p>
       <ul className="mt-3 grid grid-cols-3 gap-2">

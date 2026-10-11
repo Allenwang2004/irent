@@ -18,7 +18,7 @@ export type Shot = {
 type Progress = {
   current: number;
   total: number;
-  thumbs: { slot: string; label: string; previewUrl?: string }[];
+  thumbs: { slot: string; label: string; short: string; previewUrl?: string }[];
   onSelect: (slot: string) => void;
 };
 
@@ -39,6 +39,10 @@ type Props = {
   closeLabel: string;
   // Shown under the hint, e.g. the return countdown.
   notice?: React.ReactNode;
+  // Top-right "done", as in iRent: moves on once every photo of this stage is taken.
+  onDone?: () => void;
+  doneEnabled?: boolean;
+  doneLabel?: string;
 };
 
 // Full-screen viewfinder, one screen tall and never scrolling. Stays mounted
@@ -55,14 +59,17 @@ export function CaptureScreen({
   onClose,
   closeLabel,
   notice,
+  onDone,
+  doneEnabled = false,
+  doneLabel = "完成",
 }: Props) {
   const [camera, setCamera] = useState<CameraState>({ status: "starting" });
+  const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
   const [showReference, setShowReference] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<CameraHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const albumInput = useRef<HTMLInputElement>(null);
 
   async function check(source: Blob) {
     setBusy(true);
@@ -99,34 +106,53 @@ export function CaptureScreen({
     if (camera.status !== "ready") fileInput.current?.click();
   }
 
+  async function toggleTorch() {
+    const on = await cameraRef.current!.setTorch(!torch.on);
+    setTorch((t) => ({ ...t, on }));
+  }
+
   const aiming = !pending && !busy;
 
   return (
     <main className="flex h-dvh flex-col overflow-hidden overscroll-none bg-camera text-white">
       <input ref={fileInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={onFile} />
-      {/* Prepared photos for demos, e.g. to show a blurry shot being rejected. */}
-      <input ref={albumInput} type="file" accept="image/*" className="hidden" onChange={onFile} />
 
-      <header className="relative shrink-0 px-14 pt-3 pb-2 text-center">
-        <button type="button" onClick={onClose} className="absolute top-3 left-3 text-sm text-white/75">
+      {/* Layout follows iRent's own photo screen: title and instructions in the
+          middle, "done" on the right. */}
+      <header className="grid shrink-0 grid-cols-[4rem_1fr_4rem] items-start px-3 pt-3 pb-2">
+        <button type="button" onClick={onClose} className="justify-self-start pt-0.5 text-sm text-white/75">
           {closeLabel}
         </button>
-        <h1 className="text-base font-semibold">
-          {progress && (
-            <span className="mr-2 text-xs font-normal text-white/60">
-              {progress.current} / {progress.total}
-            </span>
-          )}
-          {shot.title}
-        </h1>
-        <p className="text-xs text-white/75">{shot.hint}</p>
-        {notice}
+        <div className="text-center">
+          <h1 className="text-base font-semibold">
+            {shot.title}
+            {progress && (
+              <span className="ml-1.5 text-xs font-normal text-white/60">
+                {progress.current}/{progress.total}
+              </span>
+            )}
+          </h1>
+          <p className="text-xs text-white/80">{shot.hint}</p>
+          {notice}
+        </div>
+        {onDone ? (
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={!doneEnabled}
+            className="justify-self-end pt-0.5 text-sm disabled:text-white/35"
+          >
+            {doneLabel}
+          </button>
+        ) : (
+          <span />
+        )}
       </header>
 
       {/* Size the 3:4 viewfinder from the space available (container query units)
           so it keeps the exact shape the guide and the saved crop assume. */}
-      <div className="flex min-h-0 flex-1 items-center justify-center px-4 [container-type:size]">
-        <div className="relative h-[min(100cqh,133.333cqw)] w-[min(100cqw,75cqh)] overflow-hidden rounded-lg bg-camera-2">
+      <div className="flex min-h-0 flex-1 items-center justify-center [container-type:size]">
+        <div className="relative h-[min(100cqh,133.333cqw)] w-[min(100cqw,75cqh)] overflow-hidden bg-camera-2">
           {camera.status === "unavailable" ? (
             <div className="flex h-full flex-col items-center justify-center gap-2 px-8 text-center text-sm text-white/70">
               <p>{camera.reason}，改用手機相機拍照。</p>
@@ -139,7 +165,10 @@ export function CaptureScreen({
               reference={showReference ? shot.reference : null}
               plate={plate}
               liveCheck={aiming && camera.status === "ready"}
-              onReady={() => setCamera({ status: "ready" })}
+              onReady={(canTorch) => {
+                setCamera({ status: "ready" });
+                setTorch({ supported: canTorch, on: false });
+              }}
               onUnavailable={(reason) => setCamera({ status: "unavailable", reason })}
             />
           )}
@@ -171,7 +200,7 @@ export function CaptureScreen({
 
       {progress && <Thumbnails progress={progress} current={shot.slot} />}
 
-      <div className="grid h-24 shrink-0 grid-cols-3 items-center px-4 pb-[env(safe-area-inset-bottom)]">
+      <div className="grid h-24 shrink-0 grid-cols-3 items-center px-5 pb-[env(safe-area-inset-bottom)]">
         {pending ? (
           <div className="col-span-3 flex justify-center gap-6">
             <button type="button" onClick={retake} className="rounded-full border border-white/40 px-6 py-3 text-sm">
@@ -189,14 +218,18 @@ export function CaptureScreen({
           </div>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => albumInput.current?.click()}
-              disabled={busy}
-              className="justify-self-start text-sm text-white/75"
-            >
-              從相簿選擇
-            </button>
+            {torch.supported && camera.status === "ready" ? (
+              <button
+                type="button"
+                onClick={toggleTorch}
+                aria-pressed={torch.on}
+                className={`justify-self-start text-sm ${torch.on ? "text-white" : "text-white/70"}`}
+              >
+                {torch.on ? "補光：開" : "補光：關"}
+              </button>
+            ) : (
+              <span />
+            )}
             <button
               type="button"
               onClick={shoot}
@@ -209,7 +242,7 @@ export function CaptureScreen({
                 type="button"
                 onClick={() => setShowReference((v) => !v)}
                 aria-pressed={showReference}
-                className="justify-self-end text-right text-sm text-white/75"
+                className="justify-self-end text-right text-sm text-white/70"
               >
                 {showReference ? "隱藏上次照片" : "顯示上次照片"}
               </button>
@@ -247,20 +280,19 @@ export function QualityBanner({ quality }: { quality: QualityResult }) {
   );
 }
 
+// Strip of the stage's shots under the viewfinder, as in iRent: tap one to
+// retake it.
 function Thumbnails({ progress, current }: { progress: Progress; current: string }) {
   return (
-    <ol
-      className="mx-4 mt-2 grid shrink-0 gap-1.5"
-      style={{ gridTemplateColumns: `repeat(${progress.thumbs.length}, minmax(0, 1fr))` }}
-    >
-      {progress.thumbs.map((t, i) => (
-        <li key={t.slot}>
+    <ol className="mt-2 flex shrink-0 justify-center gap-1.5 px-3">
+      {progress.thumbs.map((t) => (
+        <li key={t.slot} className="max-w-14 min-w-0 flex-1">
           <button
             type="button"
             onClick={() => progress.onSelect(t.slot)}
             aria-label={`${t.label}${t.previewUrl ? "（已拍）" : ""}`}
             aria-current={t.slot === current ? "step" : undefined}
-            className={`block aspect-square w-full overflow-hidden rounded-md bg-camera-2 text-[10px] text-white/60 ${
+            className={`flex aspect-square w-full items-center justify-center overflow-hidden rounded bg-camera-2 text-[11px] text-white/70 ${
               t.slot === current ? "ring-2 ring-white" : ""
             }`}
           >
@@ -268,7 +300,7 @@ function Thumbnails({ progress, current }: { progress: Progress; current: string
               // eslint-disable-next-line @next/next/no-img-element -- local blob preview
               <img src={t.previewUrl} alt="" className="h-full w-full object-cover" />
             ) : (
-              i + 1
+              t.short
             )}
           </button>
         </li>

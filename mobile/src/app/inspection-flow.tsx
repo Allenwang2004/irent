@@ -12,11 +12,13 @@ import {
   type KnownDamage,
   knownDamageSlot,
   MAX_EXTRA_PHOTOS,
+  MAX_PARKING_PHOTOS,
+  parkingSlot,
   REQUIRED_STEPS,
   RETURN_LOCK_SECONDS,
   type Vehicle,
 } from "@/lib/inspection";
-import type { PreparedPhoto } from "@/lib/quality";
+import { preparePhoto, type PreparedPhoto } from "@/lib/quality";
 import {
   cancelInspection,
   completeInspection,
@@ -28,7 +30,9 @@ import {
   startReturn,
   type Started,
 } from "./actions";
+import { AppBar } from "./app-bar";
 import { CaptureScreen, type Shot } from "./capture-screen";
+import { CarArt } from "./car-art";
 
 type UploadState = "idle" | "uploading" | "done" | "error";
 
@@ -42,9 +46,21 @@ type SlotState = {
 
 type Extra = { slot: string; location: string; note: string };
 
-// Return adds "lock" (interior done, get out and lock the doors) between the
-// interior and exterior shots, and "expired" when the lock window runs out.
-type Phase = "intro" | "capture" | "lock" | "damages" | "review" | "submitting" | "done" | "expired";
+// Pickup:       intro -> capture -> damages -> confirm (iRent's 確認取車) -> in-use page
+// Return:       capture (interior) -> lock -> capture (exterior) -> damages -> parking -> done
+//               "expired" when the lock window runs out
+// Registration: intro -> capture -> review -> done
+type Phase =
+  | "intro"
+  | "capture"
+  | "lock"
+  | "damages"
+  | "confirm"
+  | "parking"
+  | "review"
+  | "submitting"
+  | "done"
+  | "expired";
 
 const INTERIOR_STEPS = REQUIRED_STEPS.filter((s) => INTERIOR_SLOTS.includes(s.slot));
 const EXTERIOR_STEPS = REQUIRED_STEPS.filter((s) => !INTERIOR_SLOTS.includes(s.slot));
@@ -56,6 +72,9 @@ type Props = {
   knownDamages: KnownDamage[];
   rentalId?: number;
   token?: string;
+  // Return opened from the in-use page's "start return": billing stops at once,
+  // so skip the intro and go straight to the camera.
+  autoStart?: boolean;
 };
 
 const COPY = {
@@ -69,11 +88,11 @@ const COPY = {
     title: "取車：檢查車輛狀況",
     intro: "請仔細檢查有無損傷、凹陷等，完整拍照可保障自身權益。",
     close: "取消取車",
-    done: (plate: string) => `已完成 ${plate} 的取車拍照，祝行車平安。還車時請回到首頁點「我要還車」。`,
+    done: (plate: string) => `已完成 ${plate} 的取車拍照，祝行車平安。`,
   },
   return: {
     title: "還車",
-    intro: `按下「還車」後計費就停止。接著請在 ${LOCK_MINUTES} 分鐘內拍完車內照片、下車並鎖門，再到車外拍外部照片。`,
+    intro: `按下「還車」後計費就停止。接著請在 ${LOCK_MINUTES} 分鐘內拍完車內照片、下車關門並按「下一步」鎖門，再到車外拍外部照片。`,
     close: "取消還車",
     done: (plate: string) => `${plate} 的還車照片已送出，營運團隊會再確認車況。`,
   },
@@ -100,7 +119,13 @@ export function InspectionFlow(props: Props) {
   return <Flow key={bfcacheId} {...props} />;
 }
 
-function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
+// Short labels for the thumbnail strip.
+const SHORT: Record<string, string> = { card: "卡片" };
+const shortLabel = (slot: string, imageType?: number) => SHORT[slot] ?? (imageType ? ANGLE_LABELS[imageType] : "");
+
+const LOCK_CHECKLIST = ["隨身物品都已帶走", "加油卡、停車卡已放回卡夾", "車窗已關、引擎已熄火", "人已經下車並關好車門"];
+
+function Flow({ kind, vehicle, knownDamages, rentalId, token, autoStart }: Props) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("intro");
   const [started, setStarted] = useState<Started | null>(null);
@@ -114,8 +139,10 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
   const [confirmClose, setConfirmClose] = useState(false);
   // Return only.
   const [confirmReturn, setConfirmReturn] = useState(false);
-  const [confirmLock, setConfirmLock] = useState(false);
   const [locked, setLocked] = useState(false);
+  const [parkingNote, setParkingNote] = useState("");
+  const parkingInput = useRef<HTMLInputElement>(null);
+  const autoStarted = useRef(false);
   const [now, setNow] = useState(() => Date.now());
   const expiring = useRef(false);
   const locking = useRef(false);
@@ -141,11 +168,19 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
     if (!counting || secondsLeft > 0 || expiring.current || locking.current || !started) return;
     expiring.current = true;
     setConfirmClose(false);
-    setConfirmLock(false);
     cancelInspection(started.inspectionId)
       .catch(() => {})
       .finally(() => setPhase("expired"));
   }, [counting, secondsLeft, started]);
+  // Return opened with "start return" from the in-use page: begin right away.
+  useEffect(() => {
+    if (!autoStart || autoStarted.current) return;
+    autoStarted.current = true;
+    void begin();
+    // begin only reads props and setters; run once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart]);
+
   const slotState = (slot: string): SlotState => slots[slot] ?? { rejectedShots: 0, upload: "idle" };
 
   function patchSlot(slot: string, patch: Partial<SlotState>) {
@@ -239,8 +274,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
       void upload(slot, photo);
       const next = stageSteps.find((st) => st.slot !== slot && !slots[st.slot]?.accepted);
       if (next) setCaptureSlot(next.slot);
-      else if (isReturn && !locked) setPhase("lock");
-      else setPhase(hasDamageStep ? "damages" : "review");
+      else finishStage();
       return;
     }
 
@@ -258,6 +292,42 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
       void upload(slot, photo);
     }
     setPhase("damages");
+  }
+
+  // Every photo of the current stage is taken: on to the next screen.
+  function finishStage() {
+    if (isReturn && !locked) setPhase("lock");
+    else setPhase(hasDamageStep ? "damages" : "review");
+  }
+
+  const stageDone = stageSteps.every((st) => slots[st.slot]?.accepted);
+
+  function afterDamages() {
+    setPhase(kind === "pickup" ? "confirm" : kind === "return" ? "parking" : "review");
+  }
+
+  // Where the car was left (return): no quality check, uploaded straight away.
+  async function onParkingFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    const slot = Array.from({ length: MAX_PARKING_PHOTOS }, (_, i) => parkingSlot(i)).find((sl) => !slots[sl]?.accepted);
+    if (!file || !slot) return;
+    try {
+      const photo = await preparePhoto(file);
+      patchSlot(slot, { accepted: photo, rejectedShots: 0 });
+      void upload(slot, photo);
+    } catch {
+      setError("無法讀取這張照片，請再拍一次。");
+    }
+  }
+
+  function removeParking(slot: string) {
+    setSlots((prev) => {
+      const next = { ...prev };
+      if (next[slot]?.accepted) URL.revokeObjectURL(next[slot].accepted!.previewUrl);
+      delete next[slot];
+      return next;
+    });
   }
 
   function addExtra() {
@@ -287,7 +357,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
         // Already submitted or gone; nothing to undo.
       }
     }
-    router.push("/");
+    router.push(isReturn && rentalId ? `/rental/${rentalId}` : "/");
     router.refresh();
   }
 
@@ -300,19 +370,14 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
       const result = await lockReturn(started.inspectionId);
       if (result.ok) {
         setLocked(true);
-        setConfirmLock(false);
         setCaptureSlot(EXTERIOR_STEPS[0].slot);
         setPhase("capture");
-      } else if (result.reason === "expired") {
+      } else {
         expiring.current = true;
         setPhase("expired");
-      } else {
-        setError("車內照片還沒上傳完成，請稍候再鎖門。");
-        setConfirmLock(false);
       }
     } catch {
       setError("鎖門失敗，請確認網路後再試一次。");
-      setConfirmLock(false);
     } finally {
       locking.current = false;
       setBusy(false);
@@ -325,9 +390,16 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
     ...knownDamages.map((d) => knownDamageSlot(d.id)).filter((s) => slots[s]?.accepted),
     ...extras.map((e) => e.slot),
   ];
-  const allSlots = [...REQUIRED_STEPS.map((s) => s.slot), ...optionalSlots];
+  const parkingSlots = Array.from({ length: MAX_PARKING_PHOTOS }, (_, i) => parkingSlot(i)).filter(
+    (sl) => slots[sl]?.accepted,
+  );
+  const allSlots = [...REQUIRED_STEPS.map((s) => s.slot), ...optionalSlots, ...(isReturn ? parkingSlots : [])];
+  const uploadsReady = allSlots.every((slot) => slots[slot]?.upload === "done");
+  const uploadsBusy = allSlots.some((slot) => slots[slot]?.upload === "uploading");
+  const failedUploads = allSlots.filter((slot) => slots[slot]?.upload === "error");
+  const retryFailed = () => failedUploads.forEach((slot) => void upload(slot, slots[slot].accepted!));
 
-  async function submit() {
+  async function submit(back: Phase) {
     if (!started) return;
     setPhase("submitting");
     setError(null);
@@ -347,11 +419,17 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
       };
     });
     try {
-      await completeInspection(started.inspectionId, reports);
+      await completeInspection(started.inspectionId, reports, isReturn ? { note: parkingNote } : undefined);
+      if (kind === "pickup" && started.rentalId) {
+        // Straight to the in-use page, as in iRent.
+        router.push(`/rental/${started.rentalId}`);
+        router.refresh();
+        return;
+      }
       setPhase("done");
     } catch {
       setError("送出失敗，請確認網路後再試一次。");
-      setPhase("review");
+      setPhase(back);
     }
   }
 
@@ -363,57 +441,47 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
       : isReturn
         ? "已拍的照片不會保留，車輛繼續租用並照常計費。"
         : "已拍的照片不會保留。";
+  const rentalPage = rentalId ? `/rental/${rentalId}` : "/";
+  const countdown = counting ? <Countdown seconds={secondsLeft} /> : null;
 
   if (phase === "intro") {
+    // A return started from the in-use page skips this screen; show it only
+    // while starting, or if starting failed.
+    const starting = isReturn && autoStart && !error;
     return (
-      <main className="flex flex-1 flex-col px-6 py-8">
-        <Link href="/" className="text-sm text-ink-2">
-          返回
-        </Link>
-        <h1 className="mt-6 text-center text-xl font-semibold">{copy.title}</h1>
-        <p className="mt-2 text-center text-sm text-ink-2">{copy.intro}</p>
-        <div className="mt-8 rounded-xl bg-surface-2 p-5 text-center">
-          <div className="text-2xl font-semibold">{vehicle.plate}</div>
-          <div className="text-sm text-ink-2">{vehicle.car_model}</div>
-        </div>
-        {isReturn ? (
-          <>
-            <h2 className="mt-8 text-sm font-semibold">鎖門前：車內（{LOCK_MINUTES} 分鐘內完成並鎖門）</h2>
-            <StepList steps={INTERIOR_STEPS} start={1} />
-            <h2 className="mt-4 text-sm font-semibold">鎖門後：車外</h2>
-            <StepList steps={EXTERIOR_STEPS} start={INTERIOR_STEPS.length + 1} />
-            <p className="mt-2 text-xs text-ink-3">鎖門後就無法再打開車門，請先帶走隨身物品。</p>
-          </>
-        ) : (
-          <>
-            <h2 className="mt-8 text-sm font-semibold">需要拍攝</h2>
-            <StepList steps={REQUIRED_STEPS} start={1} />
-          </>
-        )}
-        {knownDamages.length > 0 && (
-          <>
-            <h2 className="mt-6 text-sm font-semibold">這台車已記錄的損傷（{knownDamages.length} 處）</h2>
-            <ul className="mt-2 space-y-1 text-sm text-ink-2">
-              {knownDamages.map((d) => (
-                <li key={d.id}>
-                  {d.location}・{d.damage_type}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-2 text-xs text-ink-3">拍完必拍照片後，可以把這些損傷拍下來保障自身權益。</p>
-          </>
-        )}
-        <p className="mt-4 text-xs text-ink-3">每張照片拍完會立刻檢查清晰度與亮度，不合格會請你重拍。</p>
-        <div className="mt-auto pt-8">
-          {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
-          <button
-            type="button"
-            onClick={isReturn ? () => setConfirmReturn(true) : begin}
-            disabled={busy}
-            className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-60"
-          >
-            {busy ? "準備中..." : isReturn ? "還車" : "開始拍照"}
-          </button>
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar
+          title={kind === "pickup" ? "取車拍照" : kind === "return" ? "還車拍照" : "車輛登錄"}
+          back={isReturn ? rentalPage : "/"}
+          progress={0.15}
+        />
+        <div className="flex flex-1 flex-col items-center px-6 pt-8 pb-6 text-center">
+          <h2 className="text-2xl font-semibold">
+            {kind === "pickup" ? "檢查車輛狀況" : kind === "return" ? "還車檢查" : copy.title}
+          </h2>
+          <p className="mt-2 max-w-xs text-sm text-ink-2">{copy.intro}</p>
+          <CarArt plate={vehicle.plate} className="mt-8 w-full max-w-xs" />
+          <p className="mt-4 text-sm text-ink-2">車號：{vehicle.plate}</p>
+          {knownDamages.length > 0 && kind === "pickup" && (
+            <p className="mt-2 text-xs text-ink-3">
+              這台車已記錄 {knownDamages.length} 處損傷，拍完車況後可以把它們拍下來，保障自身權益。
+            </p>
+          )}
+          <div className="mt-auto w-full pt-8">
+            {error && <p role="alert" className="mb-3 text-sm text-critical">{error}</p>}
+            {starting ? (
+              <p className="py-3 text-sm text-ink-2">準備還車中...</p>
+            ) : (
+              <button
+                type="button"
+                onClick={isReturn ? () => setConfirmReturn(true) : begin}
+                disabled={busy}
+                className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-60"
+              >
+                {busy ? "準備中..." : kind === "pickup" ? "拍攝車輛狀況" : isReturn ? "還車" : "開始拍照"}
+              </button>
+            )}
+          </div>
         </div>
         {confirmReturn && (
           <Sheet
@@ -426,7 +494,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
               await begin();
               setConfirmReturn(false);
             }}
-            onCancel={() => router.push("/")}
+            onCancel={() => setConfirmReturn(false)}
           />
         )}
       </main>
@@ -435,107 +503,80 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
 
   if (phase === "expired") {
     return (
-      <main className="flex flex-1 flex-col items-center px-6 py-16 text-center">
-        <h1 className="text-xl font-semibold">還車已取消</h1>
-        <p className="mt-2 text-sm text-ink-2">
-          {LOCK_MINUTES} 分鐘內沒有完成車內拍照並鎖門，{vehicle.plate} 仍在租用中，
-          {started?.startedAt ? `從 ${formatClock(started.startedAt)} 按下還車到現在` : "這段時間"}照常計費。
-        </p>
-        <p className="mt-2 text-sm text-ink-2">準備好後可以重新還車。</p>
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
-          className="mt-8 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
-        >
-          重新還車
-        </button>
-        <Link href="/" className="mt-3 w-full rounded-full border border-line py-3 text-sm">
-          回到首頁
-        </Link>
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="還車已取消" back={rentalPage} />
+        <div className="flex flex-1 flex-col items-center px-6 py-12 text-center">
+          <p className="text-sm text-ink-2">
+            {LOCK_MINUTES} 分鐘內沒有完成車內拍照並鎖門，{vehicle.plate} 仍在租用中，
+            {started?.startedAt ? `從 ${formatClock(started.startedAt)} 按下還車到現在` : "這段時間"}照常計費。
+          </p>
+          <p className="mt-2 text-sm text-ink-2">準備好後可以重新還車。</p>
+          <Link href={rentalPage} className="mt-auto w-full rounded-full bg-accent py-3 font-medium text-accent-ink">
+            回到用車頁
+          </Link>
+        </div>
       </main>
     );
   }
 
-  const countdown = counting ? <Countdown seconds={secondsLeft} /> : null;
-
   if (phase === "lock") {
-    const interiorUploads = INTERIOR_STEPS.map((st) => slots[st.slot]?.upload);
-    const uploading = interiorUploads.some((u) => u === "uploading");
-    const failed = INTERIOR_STEPS.filter((st) => slots[st.slot]?.upload === "error");
-    const ready = interiorUploads.every((u) => u === "done");
     return (
-      <main className="flex flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-semibold">下車並鎖門</h1>
-        <p className="mt-1 text-sm text-ink-2">車內照片已完成。鎖門後就無法再打開車門，請先確認：</p>
-        <div className="mt-3">{countdown}</div>
-        <ul className="mt-4 space-y-2 text-sm">
-          {["隨身物品都已帶走", "加油卡、停車卡已放回卡夾", "車窗已關、引擎已熄火", "人已經下車"].map((item) => (
-            <li key={item} className="flex gap-2">
-              <span className="text-ink-3">□</span>
-              {item}
-            </li>
-          ))}
-        </ul>
-        <h2 className="mt-6 text-sm font-semibold">車內照片（點照片可重拍）</h2>
-        <ul className="mt-2 grid grid-cols-3 gap-2">
-          {INTERIOR_STEPS.map((st) => (
-            <li key={st.slot}>
-              <button
-                type="button"
-                onClick={() => {
-                  setCaptureSlot(st.slot);
-                  setPhase("capture");
-                }}
-                className="block w-full text-left"
-              >
-                {slots[st.slot]?.accepted && (
-                  // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-                  <img
-                    src={slots[st.slot].accepted!.previewUrl}
-                    alt={`${st.title}照片`}
-                    className="aspect-[3/4] w-full rounded-lg bg-surface-2 object-cover"
-                  />
-                )}
-                <div className="mt-1 truncate text-xs font-medium">{st.title}</div>
-                <UploadNote state={slots[st.slot]?.upload ?? "idle"} />
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="mt-auto pt-6">
-          {failed.length > 0 && (
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="下車鎖門" onBack={() => setConfirmClose(true)} progress={0.45} />
+        <div className="flex flex-1 flex-col px-4 py-5">
+          <h2 className="text-xl font-semibold">鎖門前請確認</h2>
+          <p className="mt-1 text-sm text-ink-2">鎖門後就無法再打開車門，車內照片也不能重拍。確認以下事項後按「確認，鎖門」。</p>
+          <div className="mt-2">{countdown}</div>
+          <ul className="mt-4 flex flex-col gap-2 rounded-xl bg-surface-1 p-4 text-sm">
+            {LOCK_CHECKLIST.map((item) => (
+              <li key={item} className="flex gap-3">
+                <span className="text-ink-3">{LOCK_CHECKLIST.indexOf(item) + 1}.</span>
+                {item}
+              </li>
+            ))}
+          </ul>
+          <h3 className="mt-6 text-sm font-semibold">車內照片（鎖門前可以點照片重拍）</h3>
+          <ul className="mt-2 grid grid-cols-3 gap-2">
+            {INTERIOR_STEPS.map((st) => (
+              <li key={st.slot}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCaptureSlot(st.slot);
+                    setPhase("capture");
+                  }}
+                  className="block w-full text-left"
+                >
+                  {slots[st.slot]?.accepted && (
+                    // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+                    <img
+                      src={slots[st.slot].accepted!.previewUrl}
+                      alt={`${st.title}照片`}
+                      className="aspect-[3/4] w-full rounded-lg bg-surface-2 object-cover"
+                    />
+                  )}
+                  <div className="mt-1 truncate text-xs font-medium">{st.title}</div>
+                  <UploadNote state={slots[st.slot]?.upload ?? "idle"} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-ink-3">照片會在背景繼續上傳，不用等上傳完成就可以鎖門。</p>
+          <div className="mt-auto pt-6">
+            {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
             <button
               type="button"
-              onClick={() => failed.forEach((st) => void upload(st.slot, slots[st.slot].accepted!))}
-              className="mb-3 w-full rounded-full border border-line py-3 text-sm"
+              onClick={lock}
+              disabled={busy}
+              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
             >
-              重新上傳失敗的照片
+              {busy ? "鎖門中..." : "確認，鎖門"}
             </button>
-          )}
-          {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
-          <button
-            type="button"
-            onClick={() => setConfirmLock(true)}
-            disabled={!ready || busy}
-            className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
-          >
-            {uploading ? "照片上傳中..." : "我已下車，鎖門"}
-          </button>
-          <button type="button" onClick={() => setConfirmClose(true)} className="mt-2 w-full py-2 text-sm text-ink-2">
-            取消還車，繼續借車
-          </button>
+            <button type="button" onClick={() => setConfirmClose(true)} className="mt-2 w-full py-2 text-sm text-ink-2">
+              取消還車，繼續借車
+            </button>
+          </div>
         </div>
-        {confirmLock && (
-          <Sheet
-            title="確定要鎖門嗎？"
-            text="鎖門後就無法再打開車門，車內照片也不能再重拍。接著請到車外拍外部照片。"
-            confirmLabel={busy ? "鎖門中..." : "鎖門"}
-            cancelLabel="還沒好"
-            busy={busy}
-            onConfirm={lock}
-            onCancel={() => setConfirmLock(false)}
-          />
-        )}
         {confirmClose && (
           <CloseSheet label={copy.close} note={closeNote} onConfirm={close} onCancel={() => setConfirmClose(false)} />
         )}
@@ -561,6 +602,7 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
                   thumbs: stageSteps.map((st) => ({
                     slot: st.slot,
                     label: st.title,
+                    short: shortLabel(st.slot, st.imageType),
                     previewUrl: slots[st.slot]?.accepted?.previewUrl,
                   })),
                   onSelect: setCaptureSlot,
@@ -571,8 +613,11 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
           onRetake={onRetake}
           onAccept={onAccept}
           onClose={() => (requiredShot ? setConfirmClose(true) : setPhase("damages"))}
-          closeLabel={requiredShot ? (isReturn && locked ? "離開" : copy.close) : "返回"}
+          closeLabel={requiredShot ? (isReturn && locked ? "離開" : "取消") : "返回"}
           notice={countdown}
+          onDone={requiredShot ? finishStage : undefined}
+          doneLabel={isReturn && !locked ? "下一步" : "完成"}
+          doneEnabled={stageDone && !s.pending}
         />
         {confirmClose && (
           <CloseSheet
@@ -588,192 +633,305 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
 
   if (phase === "damages" && kind !== "registration") {
     const extraCopy = EXTRA_COPY[kind];
-    const pendingUploads = optionalSlots.some((slot) => slots[slot]?.upload === "uploading");
     const missingLocation = extras.some((e) => !e.location);
     return (
-      <main className="flex flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-semibold">損傷紀錄</h1>
-        <p className="mt-1 text-sm text-ink-2">必拍照片已完成。以下都不強制，但拍下來可以保障你的權益。</p>
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="損傷紀錄" progress={isReturn ? 0.75 : 0.6} />
+        <div className="flex flex-1 flex-col px-4 py-5">
+          <p className="text-sm text-ink-2">必拍照片已完成。以下都不強制，但拍下來可以保障你的權益。</p>
 
-        {knownDamages.length > 0 && (
+          {knownDamages.length > 0 && (
+            <section className="mt-6">
+              <h2 className="font-semibold">已記錄的損傷</h2>
+              <p className="mt-1 text-sm text-ink-2">
+                {kind === "pickup" ? "這些是這台車之前就有的損傷，建議先拍下來。" : "請拍下這些已記錄損傷目前的狀況。"}
+              </p>
+              <ul className="mt-3 flex flex-col gap-2">
+                {knownDamages.map((d) => {
+                  const slot = knownDamageSlot(d.id);
+                  const photo = slots[slot]?.accepted;
+                  return (
+                    <li key={d.id} className="flex items-center gap-3 rounded-xl bg-surface-1 p-3">
+                      {photo ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+                        <img src={photo.previewUrl} alt="" className="h-14 w-14 rounded-md object-cover" />
+                      ) : (
+                        <div className="flex h-14 w-14 items-center justify-center rounded-md bg-surface-2 text-xs text-ink-3">
+                          未拍
+                        </div>
+                      )}
+                      <div className="min-w-0 flex-1 text-sm">
+                        <div className="font-medium">{d.location}</div>
+                        <div className="text-ink-3">
+                          {d.damage_type}・{d.severity}
+                          {d.image_type ? `・從${ANGLE_LABELS[d.image_type]}看得到` : ""}
+                        </div>
+                        {photo && <UploadNote state={slots[slot].upload} />}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCaptureSlot(slot);
+                          setPhase("capture");
+                        }}
+                        className="rounded-full border border-line px-4 py-2 text-sm"
+                      >
+                        {photo ? "重拍" : "拍攝"}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
           <section className="mt-6">
-            <h2 className="font-semibold">已記錄的損傷</h2>
-            <p className="mt-1 text-sm text-ink-2">
-              {kind === "pickup"
-                ? "這些是這台車之前就有的損傷，建議先拍下來。"
-                : "請拍下這些已記錄損傷目前的狀況。"}
-            </p>
+            <h2 className="font-semibold">{extraCopy.heading}</h2>
+            <p className="mt-1 text-sm text-ink-2">{extraCopy.text}</p>
             <ul className="mt-3 flex flex-col gap-2">
-              {knownDamages.map((d) => {
-                const slot = knownDamageSlot(d.id);
-                const photo = slots[slot]?.accepted;
+              {extras.map((e) => {
+                const photo = slots[e.slot]?.accepted;
                 return (
-                  <li key={d.id} className="flex items-center gap-3 rounded-xl border border-line p-3">
-                    {photo ? (
+                  <li key={e.slot} className="flex gap-3 rounded-xl bg-surface-1 p-3">
+                    {photo && (
                       // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-                      <img src={photo.previewUrl} alt="" className="h-14 w-14 rounded-md object-cover" />
-                    ) : (
-                      <div className="flex h-14 w-14 items-center justify-center rounded-md bg-surface-2 text-xs text-ink-3">
-                        未拍
-                      </div>
+                      <img src={photo.previewUrl} alt="" className="h-20 w-16 shrink-0 rounded-md object-cover" />
                     )}
-                    <div className="min-w-0 flex-1 text-sm">
-                      <div className="font-medium">{d.location}</div>
-                      <div className="text-ink-3">
-                        {d.damage_type}・{d.severity}
-                        {d.image_type ? `・從${ANGLE_LABELS[d.image_type]}看得到` : ""}
+                    <div className="flex min-w-0 flex-1 flex-col gap-2 text-sm">
+                      <select
+                        value={e.location}
+                        onChange={(ev) =>
+                          setExtras((prev) => prev.map((x) => (x.slot === e.slot ? { ...x, location: ev.target.value } : x)))
+                        }
+                        aria-label="損傷位置"
+                        className="rounded border border-line bg-surface-1 px-2 py-1.5"
+                      >
+                        <option value="">選擇位置（必填）</option>
+                        {DAMAGE_AREAS.map((a) => (
+                          <option key={a} value={a}>
+                            {a}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        value={e.note}
+                        maxLength={200}
+                        onChange={(ev) =>
+                          setExtras((prev) => prev.map((x) => (x.slot === e.slot ? { ...x, note: ev.target.value } : x)))
+                        }
+                        placeholder="補充說明（選填）"
+                        className="rounded border border-line bg-surface-1 px-2 py-1.5"
+                      />
+                      <div className="flex items-center justify-between">
+                        <UploadNote state={slots[e.slot]?.upload ?? "idle"} />
+                        <button type="button" onClick={() => removeExtra(e.slot)} className="text-ink-3">
+                          刪除
+                        </button>
                       </div>
-                      {photo && <UploadNote state={slots[slot].upload} />}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCaptureSlot(slot);
-                        setPhase("capture");
-                      }}
-                      className="rounded-full border border-line px-4 py-2 text-sm"
-                    >
-                      {photo ? "重拍" : "拍攝"}
-                    </button>
                   </li>
                 );
               })}
             </ul>
+            {extras.length < MAX_EXTRA_PHOTOS && (
+              <button type="button" onClick={addExtra} className="mt-3 w-full rounded-full border border-line bg-surface-1 py-3 text-sm">
+                新增損傷照片
+              </button>
+            )}
           </section>
-        )}
 
-        <section className="mt-6">
-          <h2 className="font-semibold">{extraCopy.heading}</h2>
-          <p className="mt-1 text-sm text-ink-2">{extraCopy.text}</p>
-          <ul className="mt-3 flex flex-col gap-2">
-            {extras.map((e) => {
-              const photo = slots[e.slot]?.accepted;
-              return (
-                <li key={e.slot} className="flex gap-3 rounded-xl border border-line p-3">
-                  {photo && (
-                    // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-                    <img src={photo.previewUrl} alt="" className="h-20 w-16 shrink-0 rounded-md object-cover" />
-                  )}
-                  <div className="flex min-w-0 flex-1 flex-col gap-2 text-sm">
-                    <select
-                      value={e.location}
-                      onChange={(ev) =>
-                        setExtras((prev) => prev.map((x) => (x.slot === e.slot ? { ...x, location: ev.target.value } : x)))
-                      }
-                      aria-label="損傷位置"
-                      className="rounded border border-line bg-surface-1 px-2 py-1.5"
-                    >
-                      <option value="">選擇位置（必填）</option>
-                      {DAMAGE_AREAS.map((a) => (
-                        <option key={a} value={a}>
-                          {a}
-                        </option>
-                      ))}
-                    </select>
-                    <input
-                      value={e.note}
-                      maxLength={200}
-                      onChange={(ev) =>
-                        setExtras((prev) => prev.map((x) => (x.slot === e.slot ? { ...x, note: ev.target.value } : x)))
-                      }
-                      placeholder="補充說明（選填）"
-                      className="rounded border border-line bg-surface-1 px-2 py-1.5"
-                    />
-                    <div className="flex items-center justify-between">
-                      <UploadNote state={slots[e.slot]?.upload ?? "idle"} />
-                      <button type="button" onClick={() => removeExtra(e.slot)} className="text-ink-3">
-                        刪除
-                      </button>
-                    </div>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          {extras.length < MAX_EXTRA_PHOTOS && (
-            <button type="button" onClick={addExtra} className="mt-3 w-full rounded-full border border-line py-3 text-sm">
-              新增損傷照片
+          <div className="mt-auto pt-6">
+            {missingLocation && <p className="mb-2 text-center text-sm text-ink-2">請為每張損傷照片選擇位置</p>}
+            <button
+              type="button"
+              onClick={afterDamages}
+              disabled={missingLocation}
+              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+            >
+              下一步
             </button>
-          )}
-        </section>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-        <div className="mt-auto pt-6">
-          {missingLocation && <p className="mb-2 text-center text-sm text-ink-2">請為每張損傷照片選擇位置</p>}
-          <button
-            type="button"
-            onClick={() => setPhase("review")}
-            disabled={missingLocation || pendingUploads}
-            className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
-          >
-            {pendingUploads ? "照片上傳中..." : "下一步：確認照片"}
-          </button>
+  // iRent's 確認取車: only the confirm button does anything in the demo.
+  if ((phase === "confirm" || (phase === "submitting" && kind === "pickup")) && kind === "pickup") {
+    return (
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="確認取車" onBack={() => setPhase("damages")} progress={0.9} />
+        <div className="flex flex-1 flex-col px-4 py-5">
+          <ul className="divide-y divide-line rounded-xl bg-surface-1 text-sm">
+            <ConfirmRow label="查看租車合約" />
+            <ConfirmRow label="查詢／邀請共同承租人" note="邀請共同承租人，未來可以一起用車" />
+            <ConfirmRow label="預設還車時間" value="未設定" />
+            <ConfirmRow label="確認簽名" value="已簽名" />
+            <ConfirmRow label="安心服務・$50/hr" value="已加購" />
+            <ConfirmRow label="行車記錄器・$100/日" value="已加購" />
+          </ul>
+          <ul className="mt-5 flex flex-col gap-3 text-sm text-ink-2">
+            {[
+              "我已確認租車合約無誤",
+              "我確實遵守「酒後不駕車」的安全法則",
+              "我同意不懸掛偽造、已吊扣、報廢、其他車輛之車牌，及污損車牌行為",
+              "我同意訂單異動時，由和雲行動服務代為處理發票及銷貨退回證明單",
+            ].map((t) => (
+              <li key={t}>
+                <label className="flex gap-3">
+                  <input type="checkbox" defaultChecked className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--accent)]" />
+                  {t}
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs text-ink-3">
+            取車照片 {allSlots.length} 張
+            {uploadsBusy ? "，上傳中..." : failedUploads.length ? `，${failedUploads.length} 張上傳失敗` : "，已上傳"}
+          </p>
+          <div className="mt-auto pt-6">
+            {failedUploads.length > 0 && (
+              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+                重新上傳失敗的照片
+              </button>
+            )}
+            {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
+            <button
+              type="button"
+              onClick={() => submit("confirm")}
+              disabled={!uploadsReady || phase === "submitting"}
+              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+            >
+              {phase === "submitting" ? "取車中..." : uploadsBusy ? "照片上傳中..." : "確認取車"}
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  // iRent's 提供停車位置: a parking photo is required (no quality check); the
+  // description is optional. "Next" uploads anything left and submits.
+  if ((phase === "parking" || (phase === "submitting" && isReturn)) && isReturn) {
+    const hasPhoto = parkingSlots.length > 0;
+    return (
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="提供停車位置" onBack={() => setPhase("damages")} progress={0.9} />
+        <input ref={parkingInput} type="file" accept="image/*" capture="environment" className="hidden" onChange={onParkingFile} />
+        <div className="flex flex-1 flex-col px-5 py-6">
+          <h2 className="text-center text-xl font-semibold">幫助下一位用戶找車吧</h2>
+          <p className="mt-4 text-sm text-ink-2">
+            <span className="font-medium text-accent">路邊停車</span>：請描述停車位置並拍攝車輛停放環境（含車輛）
+          </p>
+          <p className="mt-2 text-sm text-ink-2">
+            <span className="font-medium text-accent">停車場停車</span>：請描述「還車樓層和停車格號碼」並拍攝車輛停放環境（含車輛）
+          </p>
+          <input
+            value={parkingNote}
+            maxLength={100}
+            onChange={(e) => setParkingNote(e.target.value)}
+            placeholder="例如：長安東路 150 號 7-11 附近／B3-151（選填）"
+            className="mt-4 rounded-lg bg-surface-2 px-3 py-3 text-sm"
+          />
+          <ul className="mt-5 flex flex-wrap gap-3">
+            {parkingSlots.map((slot) => (
+              <li key={slot} className="relative">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
+                <img src={slots[slot].accepted!.previewUrl} alt="停車環境照片" className="h-20 w-20 rounded-md object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removeParking(slot)}
+                  className="absolute -top-2 -right-2 rounded-full bg-surface-1 px-1.5 text-xs shadow"
+                  aria-label="移除這張照片"
+                >
+                  移除
+                </button>
+                <UploadNote state={slots[slot].upload} />
+              </li>
+            ))}
+            {parkingSlots.length < MAX_PARKING_PHOTOS && (
+              <li>
+                <button
+                  type="button"
+                  onClick={() => parkingInput.current?.click()}
+                  className="flex h-20 w-20 items-center justify-center rounded-md bg-surface-2 text-xs text-ink-2"
+                >
+                  直接拍攝
+                </button>
+              </li>
+            )}
+          </ul>
+          {!hasPhoto && <p className="mt-2 text-xs text-ink-3">請至少拍一張停車環境照片。</p>}
+          <div className="mt-auto pt-6">
+            {failedUploads.length > 0 && (
+              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+                重新上傳失敗的照片
+              </button>
+            )}
+            {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
+            <button
+              type="button"
+              onClick={() => submit("parking")}
+              disabled={!hasPhoto || !uploadsReady || phase === "submitting"}
+              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
+            >
+              {phase === "submitting" ? "送出中..." : uploadsBusy ? "照片上傳中..." : "下一步"}
+            </button>
+            {/* Shown as in iRent; the demo requires a parking photo. */}
+            <p className="mt-3 text-center text-sm text-ink-3">略過</p>
+          </div>
         </div>
       </main>
     );
   }
 
   if (phase === "review" || phase === "submitting") {
-    const uploading = allSlots.some((slot) => slots[slot]?.upload === "uploading");
-    const failed = allSlots.filter((slot) => slots[slot]?.upload === "error");
-    const ready = allSlots.every((slot) => slots[slot]?.upload === "done");
     return (
-      <main className="flex flex-1 flex-col px-4 py-6">
-        <h1 className="text-xl font-semibold">確認照片</h1>
-        <p className="mt-1 text-sm text-ink-2">
-          {isReturn ? "點車外或損傷照片可以重拍（車門已鎖，車內照片無法重拍）。" : "點照片可以重拍。"}確認無誤後送出。
-        </p>
-        <ul className="mt-5 grid grid-cols-3 gap-2">
-          {allSlots.map((slot) => {
-            const photo = slots[slot]?.accepted;
-            const label = labelFor(slot, knownDamages, extras);
-            // The doors are locked; the interior can no longer be reshot.
-            const fixed = isReturn && INTERIOR_SLOTS.includes(slot);
-            return (
-              <li key={slot}>
-                <button
-                  type="button"
-                  disabled={fixed}
-                  onClick={() => {
-                    setCaptureSlot(slot);
-                    setPhase("capture");
-                  }}
-                  className="block w-full text-left"
-                >
-                  {photo && (
-                    // eslint-disable-next-line @next/next/no-img-element -- local blob preview
-                    <img src={photo.previewUrl} alt={`${label}照片`} className="aspect-[3/4] w-full rounded-lg bg-surface-2 object-cover" />
-                  )}
-                  <div className="mt-1 truncate text-xs font-medium">{label}</div>
-                  <UploadNote state={slots[slot]?.upload ?? "idle"} />
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-        {hasDamageStep && (
-          <button type="button" onClick={() => setPhase("damages")} className="mt-4 text-sm text-ink-2 underline">
-            回到損傷紀錄
-          </button>
-        )}
-        <div className="mt-auto pt-6">
-          {failed.length > 0 && (
+      <main className="flex flex-1 flex-col bg-surface-0">
+        <AppBar title="確認照片" progress={0.9} />
+        <div className="flex flex-1 flex-col px-4 py-5">
+          <p className="text-sm text-ink-2">點照片可以重拍。確認無誤後送出。</p>
+          <ul className="mt-5 grid grid-cols-3 gap-2">
+            {allSlots.map((slot) => {
+              const photo = slots[slot]?.accepted;
+              const label = labelFor(slot, knownDamages, extras);
+              return (
+                <li key={slot}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCaptureSlot(slot);
+                      setPhase("capture");
+                    }}
+                    className="block w-full text-left"
+                  >
+                    {photo && (
+                      // eslint-disable-next-line @next/next/no-img-element -- local blob preview
+                      <img src={photo.previewUrl} alt={`${label}照片`} className="aspect-[3/4] w-full rounded-lg bg-surface-2 object-cover" />
+                    )}
+                    <div className="mt-1 truncate text-xs font-medium">{label}</div>
+                    <UploadNote state={slots[slot]?.upload ?? "idle"} />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-auto pt-6">
+            {failedUploads.length > 0 && (
+              <button type="button" onClick={retryFailed} className="mb-3 w-full rounded-full border border-line py-3 text-sm">
+                重新上傳失敗的照片
+              </button>
+            )}
+            {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
             <button
               type="button"
-              onClick={() => failed.forEach((slot) => void upload(slot, slots[slot].accepted!))}
-              className="mb-3 w-full rounded-full border border-line py-3 text-sm"
+              onClick={() => submit("review")}
+              disabled={!uploadsReady || phase === "submitting"}
+              className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
             >
-              重新上傳失敗的照片
+              {phase === "submitting" ? "送出中..." : uploadsBusy ? "照片上傳中..." : "完成登錄"}
             </button>
-          )}
-          {error && <p role="alert" className="mb-3 text-center text-sm text-critical">{error}</p>}
-          <button
-            type="button"
-            onClick={submit}
-            disabled={!ready || phase === "submitting"}
-            className="w-full rounded-full bg-accent py-3 font-medium text-accent-ink disabled:opacity-50"
-          >
-            {phase === "submitting" ? "送出中..." : uploading ? "照片上傳中..." : kind === "pickup" ? "確認取車" : kind === "return" ? "確認還車" : "完成登錄"}
-          </button>
+          </div>
         </div>
       </main>
     );
@@ -781,39 +939,51 @@ function Flow({ kind, vehicle, knownDamages, rentalId, token }: Props) {
 
   const totalRejected = Object.values(slots).reduce((n, s) => n + s.rejectedShots, 0);
   return (
-    <main className="flex flex-1 flex-col items-center px-6 py-16 text-center">
-      <h1 className="text-xl font-semibold">{kind === "pickup" ? "取車完成" : kind === "return" ? "還車完成" : "登錄完成"}</h1>
-      <p className="mt-2 text-sm text-ink-2">{copy.done(vehicle.plate)}</p>
-      {isReturn && started?.startedAt && (
-        <p className="mt-2 text-sm text-ink-2">計費已停在 {formatClock(started.startedAt)}（按下還車的時間）。</p>
-      )}
-      <dl className="mt-8 grid w-full grid-cols-2 gap-3 text-left">
-        <div className="rounded-xl bg-surface-2 p-4">
-          <dt className="text-xs text-ink-3">送出照片</dt>
-          <dd className="mt-1 text-2xl font-semibold">{allSlots.length} 張</dd>
-        </div>
-        <div className="rounded-xl bg-surface-2 p-4">
-          <dt className="text-xs text-ink-3">拍照時攔下的不合格照片</dt>
-          <dd className="mt-1 text-2xl font-semibold">{totalRejected} 張</dd>
-        </div>
-      </dl>
-      {kind !== "registration" && started && (
-        <>
-          <p className="mt-8 text-sm text-ink-2">
-            照片會由 AI 檢查車況，通常幾分鐘內完成。之後也可以在首頁的「歷史訂單」查看。
-          </p>
-          <Link
-            href={`/records/${started.inspectionId}`}
-            className="mt-3 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
-          >
-            查看{kind === "pickup" ? "取車" : "還車"}確認
-          </Link>
-        </>
-      )}
-      <Link href="/" className="mt-auto w-full rounded-full border border-line py-3 text-sm">
-        回到首頁
-      </Link>
+    <main className="flex flex-1 flex-col bg-surface-0">
+      <AppBar title={kind === "return" ? "還車完成" : "登錄完成"} back="/" />
+      <div className="flex flex-1 flex-col items-center px-6 py-10 text-center">
+        <p className="text-sm text-ink-2">{copy.done(vehicle.plate)}</p>
+        {isReturn && started?.startedAt && (
+          <p className="mt-2 text-sm text-ink-2">計費已停在 {formatClock(started.startedAt)}（按下還車的時間）。</p>
+        )}
+        <dl className="mt-8 grid w-full grid-cols-2 gap-3 text-left">
+          <div className="rounded-xl bg-surface-1 p-4">
+            <dt className="text-xs text-ink-3">送出照片</dt>
+            <dd className="mt-1 text-2xl font-semibold">{allSlots.length} 張</dd>
+          </div>
+          <div className="rounded-xl bg-surface-1 p-4">
+            <dt className="text-xs text-ink-3">拍照時攔下的不合格照片</dt>
+            <dd className="mt-1 text-2xl font-semibold">{totalRejected} 張</dd>
+          </div>
+        </dl>
+        {isReturn && started && (
+          <>
+            <p className="mt-8 text-sm text-ink-2">照片會由 AI 檢查車況，通常幾分鐘內完成。之後也可以在首頁的「歷史訂單」查看。</p>
+            <Link
+              href={`/records/${started.inspectionId}`}
+              className="mt-3 w-full rounded-full bg-accent py-3 font-medium text-accent-ink"
+            >
+              查看還車確認
+            </Link>
+          </>
+        )}
+        <Link href="/" className="mt-auto w-full rounded-full border border-line py-3 text-sm">
+          回到首頁
+        </Link>
+      </div>
     </main>
+  );
+}
+
+function ConfirmRow({ label, value, note }: { label: string; value?: string; note?: string }) {
+  return (
+    <li className="flex items-center justify-between gap-3 px-4 py-3.5">
+      <div>
+        <div>{label}</div>
+        {note && <div className="text-xs text-critical">{note}</div>}
+      </div>
+      {value && <span className="text-sm text-ink-2">{value}</span>}
+    </li>
   );
 }
 
@@ -893,18 +1063,6 @@ function Sheet({
         </button>
       </div>
     </div>
-  );
-}
-
-function StepList({ steps, start }: { steps: typeof REQUIRED_STEPS; start: number }) {
-  return (
-    <ol className="mt-2 space-y-1 text-sm text-ink-2">
-      {steps.map((s, i) => (
-        <li key={s.slot}>
-          {start + i}. {s.title}
-        </li>
-      ))}
-    </ol>
   );
 }
 

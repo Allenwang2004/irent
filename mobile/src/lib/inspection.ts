@@ -3,7 +3,7 @@
 // label maps; change them together.
 
 export type InspectionKind = "registration" | "pickup" | "return";
-export type PhotoCategory = "card" | "angle" | "known_damage" | "extra";
+export type PhotoCategory = "card" | "angle" | "known_damage" | "extra" | "parking";
 
 export const PHOTO_BUCKET = "inspection-photos";
 export const MAX_EXTRA_PHOTOS = 6;
@@ -41,9 +41,16 @@ export const REQUIRED_SLOTS = REQUIRED_STEPS.map((s) => s.slot);
 
 // On return, the card and interior are shot before the renter locks the doors;
 // the corners after. Billing stops at the Return tap, so the renter gets a
-// short window to finish the interior and lock, or the return is cancelled.
+// window to finish the interior and lock, or the return is cancelled. Locking
+// does not wait for the interior photos to finish uploading.
 export const INTERIOR_SLOTS = ["card", "angle-10", "angle-11"];
-export const RETURN_LOCK_SECONDS = 5 * 60;
+export const RETURN_LOCK_SECONDS = 10 * 60;
+
+// Return ends with where the car is parked, for the next renter: at least one
+// photo (no quality check) and an optional description.
+export const MAX_PARKING_PHOTOS = 3;
+export const parkingSlot = (index: number) => `parking-${index}`;
+export const PARKING_SLOTS = Array.from({ length: MAX_PARKING_PHOTOS }, (_, i) => parkingSlot(i));
 
 export const ANGLE_LABELS: Record<number, string> = {
   1: "左前",

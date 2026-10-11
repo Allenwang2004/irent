@@ -5,17 +5,21 @@ import { InspectionFlow } from "../../inspection-flow";
 import { Unavailable } from "../../unavailable";
 
 type Params = Promise<{ rentalId: string }>;
+type SearchParams = Promise<{ start?: string }>;
 
-export default function ReturnPage({ params }: { params: Params }) {
+export default function ReturnPage({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   return (
     <Suspense fallback={<p className="p-6 text-sm text-ink-3">載入中...</p>}>
-      <ReturnContent params={params} />
+      <ReturnContent params={params} searchParams={searchParams} />
     </Suspense>
   );
 }
 
-async function ReturnContent({ params }: { params: Params }) {
+// Opened from the in-use page's "start return" (?start=1): the return begins
+// at once, billing stops, and the camera opens on the interior.
+async function ReturnContent({ params, searchParams }: { params: Params; searchParams: SearchParams }) {
   const id = Number((await params).rentalId);
+  const autoStart = (await searchParams).start === "1";
   if (!Number.isInteger(id)) notFound();
   const rental = await getOpenRental(id);
   if (!rental) notFound();
@@ -31,6 +35,7 @@ async function ReturnContent({ params }: { params: Params }) {
       vehicle={{ id: vehicle.id, plate: vehicle.plate, car_model: vehicle.car_model }}
       knownDamages={damages}
       rentalId={rental.id}
+      autoStart={autoStart}
     />
   );
 }

@@ -67,10 +67,10 @@ async function VehicleList() {
             )}
             {rental?.status === "in_use" && (
               <Link
-                href={`/return/${rental.id}`}
+                href={`/rental/${rental.id}`}
                 className="mt-4 block rounded-full bg-accent py-3 text-center font-medium text-accent-ink"
               >
-                我要還車
+                用車中，查看
               </Link>
             )}
             {rental?.status === "picking_up" && <CancelPickupButton rentalId={rental.id} />}

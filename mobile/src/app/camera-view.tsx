@@ -10,7 +10,11 @@ const ASPECT = 3 / 4;
 const LIVE_CHECK_MS = 500;
 const CAPTURE_JPEG_QUALITY = 0.92;
 
-export type CameraHandle = { capture: () => Promise<Blob> };
+export type CameraHandle = {
+  capture: () => Promise<Blob>;
+  // Turn the phone's light on or off; resolves to the new state.
+  setTorch: (on: boolean) => Promise<boolean>;
+};
 
 type Props = {
   ref: Ref<CameraHandle>;
@@ -21,7 +25,8 @@ type Props = {
   plate: string;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
-  onReady: () => void;
+  // torch: whether the phone lets the page switch its light on.
+  onReady: (torch: boolean) => void;
   onUnavailable: (reason: string) => void;
 };
 
@@ -41,7 +46,6 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
-  const [torch, setTorch] = useState<{ supported: boolean; on: boolean }>({ supported: false, on: false });
   const onReadyRef = useRef(onReady);
   const onUnavailableRef = useRef(onUnavailable);
   useEffect(() => {
@@ -76,8 +80,7 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
         await video.play();
         const track = stream.getVideoTracks()[0];
         const caps = track?.getCapabilities?.() as MediaTrackCapabilities & { torch?: boolean };
-        setTorch({ supported: Boolean(caps?.torch), on: false });
-        onReadyRef.current();
+        onReadyRef.current(Boolean(caps?.torch));
       } catch (err) {
         if (cancelled) return;
         const denied = err instanceof DOMException && err.name === "NotAllowedError";
@@ -105,6 +108,16 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
   }, [liveCheck]);
 
   useImperativeHandle(ref, () => ({
+    async setTorch(on: boolean) {
+      const track = streamRef.current?.getVideoTracks()[0];
+      if (!track) return false;
+      try {
+        await track.applyConstraints({ advanced: [{ torch: on } as MediaTrackConstraintSet] });
+        return on;
+      } catch {
+        return false;
+      }
+    },
     async capture() {
       const video = videoRef.current;
       if (!video || !video.videoWidth) throw new Error("Camera is not ready");
@@ -124,18 +137,6 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
       );
     },
   }));
-
-  async function toggleTorch() {
-    const track = streamRef.current?.getVideoTracks()[0];
-    if (!track) return;
-    const next = !torch.on;
-    try {
-      await track.applyConstraints({ advanced: [{ torch: next } as MediaTrackConstraintSet] });
-      setTorch({ supported: true, on: next });
-    } catch {
-      setTorch({ supported: false, on: false });
-    }
-  }
 
   const hint = liveCheck ? liveHint(live) : null;
 
@@ -163,16 +164,6 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
           <span className={`h-2.5 w-2.5 rounded-full ${hint.dot}`} aria-hidden />
           {hint.text}
         </div>
-      )}
-      {torch.supported && (
-        <button
-          type="button"
-          onClick={toggleTorch}
-          aria-pressed={torch.on}
-          className="absolute top-3 right-3 rounded-full bg-black/65 px-3 py-1.5 text-xs"
-        >
-          {torch.on ? "關閉補光" : "開啟補光"}
-        </button>
       )}
       <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-sm whitespace-nowrap">
         車號：{plate}
