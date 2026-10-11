@@ -47,3 +47,22 @@ export async function hasLockedReturn(rentalId: number) {
   if (error) throw new Error(error.message);
   return (data ?? []).length > 0;
 }
+
+// The in-use page: the car, and when the renter took it.
+export async function getRentalInUse(id: number) {
+  const { data, error } = await getSupabase()
+    .from("rentals")
+    .select("id, order_no, status, picked_up_at, vehicles(id, plate, car_model)")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  const vehicle = (Array.isArray(data.vehicles) ? data.vehicles[0] : data.vehicles) as Vehicle | null;
+  return {
+    id: data.id as number,
+    orderNo: data.order_no as string,
+    status: data.status as string,
+    pickedUpAt: data.picked_up_at as string | null,
+    vehicle,
+  };
+}

@@ -43,7 +43,7 @@ type Row = Omit<Alert, "inspection" | "vehicle" | "photo" | "baseline"> & {
   vehicles: Alert["vehicle"];
   inspection_photos: {
     id: number;
-    category: "card" | "angle" | "known_damage" | "extra";
+    category: "card" | "angle" | "known_damage" | "extra" | "parking";
     image_type: number | null;
     location: string | null;
     storage_path: string;

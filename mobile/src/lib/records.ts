@@ -27,6 +27,8 @@ export type RecordView = {
   analysisDone: boolean;
   analysisFailed: boolean;
   findings: Finding[];
+  // Return only: what the renter wrote about where the car is parked.
+  parkingNote: string | null;
   photos: { slot: string; label: string; url: string | null }[];
 };
 
@@ -97,7 +99,7 @@ export async function getRecord(inspectionId: string): Promise<RecordView | null
   const supabase = getSupabase();
   const { data: inspection, error } = await supabase
     .from("inspections")
-    .select("id, kind, status, submitted_at, analysis_status, vehicles(plate, car_model)")
+    .select("id, kind, status, submitted_at, analysis_status, parking_note, vehicles(plate, car_model)")
     .eq("id", inspectionId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -140,13 +142,18 @@ export async function getRecord(inspectionId: string): Promise<RecordView | null
     analysisDone: inspection.analysis_status === "done",
     analysisFailed: inspection.analysis_status === "error",
     findings,
+    parkingNote: inspection.parking_note ?? null,
     photos: list
       .sort((a, b) => order(a.slot) - order(b.slot) || a.slot.localeCompare(b.slot))
       .map((p) => ({
         slot: p.slot,
         label:
           REQUIRED_STEPS.find((s) => s.slot === p.slot)?.title ??
-          (p.category === "known_damage" ? "已知損傷" : `損傷：${p.location ?? ""}`),
+          (p.category === "known_damage"
+            ? "已知損傷"
+            : p.category === "parking"
+              ? "停車位置"
+              : `損傷：${p.location ?? ""}`),
         url: urls.get(p.storage_path) ?? null,
       })),
   };

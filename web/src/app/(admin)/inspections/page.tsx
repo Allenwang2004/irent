@@ -95,6 +95,9 @@ function InspectionCard({ inspection: i }: { inspection: Inspection }) {
         拍照時攔下 {rejected} 張不合格照片
         {i.kind !== "registration" && `，用戶${i.kind === "pickup" ? "回報其他損傷" : "自行回報損傷"} ${extras} 處`}
       </p>
+      {i.kind === "return" && (
+        <p className="mt-1 text-sm text-ink-2">停車位置：{i.parking_note || "未填寫說明（見停車位置照片）"}</p>
+      )}
       <ul className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5 lg:grid-cols-7">
         {i.photos.map((p) => (
           <li key={p.id}>

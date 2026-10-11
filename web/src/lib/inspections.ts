@@ -49,7 +49,7 @@ export async function signPhotoUrls(paths: string[]) {
 export type Photo = {
   id: number;
   slot: string;
-  category: "card" | "angle" | "known_damage" | "extra";
+  category: "card" | "angle" | "known_damage" | "extra" | "parking";
   image_type: number | null;
   damage_id: number | null;
   location: string | null;
@@ -69,6 +69,8 @@ export type Inspection = {
   submitted_at: string;
   analysis_status: string;
   analysis_error: string | null;
+  // Return only: where the renter says the car is parked.
+  parking_note: string | null;
   vehicle: { id: number; plate: string; car_model: string } | null;
   rental: { order_no: string } | null;
   photos: Photo[];
@@ -80,10 +82,11 @@ export function photoLabel(
   if (p.category === "card") return "卡片";
   if (p.category === "angle") return ANGLE_LABELS[p.image_type ?? 0] ?? "角度";
   if (p.category === "known_damage") return `已知：${p.damage_location ?? "車損"}`;
+  if (p.category === "parking") return "停車位置";
   return `回報：${p.location ?? "損傷"}`;
 }
 
-const CATEGORY_ORDER = { card: 0, angle: 1, known_damage: 2, extra: 3 };
+const CATEGORY_ORDER = { card: 0, angle: 1, known_damage: 2, extra: 3, parking: 4 };
 
 function sortPhotos(photos: Photo[]) {
   return photos.sort(
@@ -107,7 +110,7 @@ export async function listInspections(opts: { kind?: InspectionKind; vehicleId?:
   let query = getSupabase()
     .from("inspections")
     .select(
-      "id, kind, submitted_at, analysis_status, analysis_error, vehicles(id, plate, car_model), rentals(order_no), " +
+      "id, kind, submitted_at, analysis_status, analysis_error, parking_note, vehicles(id, plate, car_model), rentals(order_no), " +
         "inspection_photos(id, slot, category, image_type, damage_id, location, note, storage_path, verdict, rejected_shots, " +
         "photo_analyses!photo_analyses_photo_id_fkey(kind, verdict, confidence, results), " +
         "vehicle_damages!inspection_photos_damage_id_fkey(location))",
@@ -128,6 +131,7 @@ export async function listInspections(opts: { kind?: InspectionKind; vehicleId?:
     submitted_at: r.submitted_at,
     analysis_status: r.analysis_status,
     analysis_error: r.analysis_error,
+    parking_note: r.parking_note,
     vehicle: r.vehicles,
     rental: r.rentals,
     photos: sortPhotos(
