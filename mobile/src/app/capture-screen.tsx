@@ -167,6 +167,7 @@ export function CaptureScreen({
               guide={shot.guide}
               reference={showReference ? shot.reference : null}
               plate={plate}
+              previousUrl={shot.reference ?? null}
               previousLuma={previousLuma}
               liveCheck={aiming && camera.status === "ready"}
               onReady={(canTorch) => {
