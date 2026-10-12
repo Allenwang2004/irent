@@ -7,3 +7,7 @@ datasets.zip
 .env.*
 !.env.example
 __pycache__/
+
+# Kept local only
+video/
+eval/
