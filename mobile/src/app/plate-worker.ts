@@ -6,16 +6,27 @@
 // the whole plate in frame matched, no other car's plate ever matched).
 
 import * as ort from "onnxruntime-web/wasm";
-import { matchesPlate } from "@/lib/plate";
+import { matchesPlate, type PlatePose } from "@/lib/plate";
 
+// "frame" is the live viewfinder; "previous" is the previous photo of the corner,
+// checked once so the live plate can be compared with where it was then.
 export type PlateRequest =
   | { type: "load"; base: string }
-  | { type: "check"; frame: ImageBitmap; plate: string };
+  | { type: "check"; frame: ImageBitmap; plate: string; source: "frame" | "previous" };
 
 export type PlateResponse =
   | { type: "ready" }
   | { type: "failed"; reason: string }
-  | { type: "result"; found: boolean; texts: string[]; detMs: number; recMs: number };
+  | {
+      type: "result";
+      source: "frame" | "previous";
+      found: boolean;
+      // Where the matching plate is, when found.
+      pose: PlatePose | null;
+      texts: string[];
+      detMs: number;
+      recMs: number;
+    };
 
 const DET_LONG_SIDE = 640;
 const DET_THRESH = 0.3;
@@ -65,7 +76,7 @@ self.onmessage = async (event: MessageEvent<PlateRequest>) => {
     }
     return;
   }
-  const { frame, plate } = msg;
+  const { frame, plate, source } = msg;
   try {
     if (!det || !rec) return;
     const t0 = performance.now();
@@ -73,11 +84,20 @@ self.onmessage = async (event: MessageEvent<PlateRequest>) => {
     const t1 = performance.now();
     const texts = boxes.length ? await recognize(rec, frame, boxes) : [];
     const t2 = performance.now();
-    post({ type: "result", found: matchesPlate(texts, plate), texts, detMs: t1 - t0, recMs: t2 - t1 });
+    // Boxes are largest first, so this is the biggest box that reads as the plate.
+    const k = texts.findIndex((t) => matchesPlate([t], plate));
+    const pose = k === -1 ? null : poseOf(boxes[k], frame);
+    post({ type: "result", source, found: k !== -1, pose, texts, detMs: t1 - t0, recMs: t2 - t1 });
   } finally {
     frame.close();
   }
 };
+
+function poseOf(box: Box, frame: ImageBitmap): PlatePose {
+  const long = Math.max(box.w, box.h);
+  const short = Math.min(box.w, box.h);
+  return { cx: box.cx / frame.width, cy: box.cy / frame.height, width: long / frame.width, aspect: long / short };
+}
 
 // ---------------------------------------------------------------- detection
 
