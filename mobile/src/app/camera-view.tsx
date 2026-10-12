@@ -4,6 +4,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "reac
 import type { GuideKey } from "@/lib/inspection";
 import { analyzeFrame, muchDarkerThan, type QualityResult } from "@/lib/quality";
 import { Guide } from "./guides";
+import { comparePose, type PlatePose } from "@/lib/plate";
 import type { PlateRequest, PlateResponse } from "./plate-worker";
 
 // The viewfinder, the guide and the saved photo all share this shape.
@@ -33,7 +34,9 @@ type Props = {
   // Previous photo of this view, drawn faintly so the new shot can match it.
   reference?: string | null;
   plate: string;
-  // Mean luma of the previous photo of this corner, to warn when it is now much darker.
+  // The previous photo of this corner (shown or not) and its mean luma, to warn
+  // when the new shot is aimed differently or much darker.
+  previousUrl: string | null;
   previousLuma: number | null;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
@@ -54,12 +57,22 @@ function visibleCrop(video: HTMLVideoElement) {
   return { sx: 0, sy: (vh - h) / 2, sw: vw, sh: h };
 }
 
-export function CameraView({ ref, guide, reference, plate, previousLuma, liveCheck, onReady, onUnavailable }: Props) {
+export function CameraView({
+  ref,
+  guide,
+  reference,
+  plate,
+  previousUrl,
+  previousLuma,
+  liveCheck,
+  onReady,
+  onUnavailable,
+}: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
   const plateCheck = guide !== null && PLATE_GUIDES.has(guide);
-  const { plateHint } = usePlateCheck(videoRef, plate, guide, liveCheck && plateCheck);
+  const { plateHint } = usePlateCheck(videoRef, plate, guide, previousUrl, liveCheck && plateCheck);
   const onReadyRef = useRef(onReady);
   const onUnavailableRef = useRef(onUnavailable);
   useEffect(() => {
@@ -214,41 +227,89 @@ function qualityHint(result: QualityResult | null) {
 // shutter never wait for it. Models load in the background when the camera
 // opens, so they are usually ready by the corner shots; if they never load, the
 // hints are the quality ones only.
+//
+// The previous photo of the corner goes through the same worker once, so the
+// live plate can be compared with where it was: a different place or angle,
+// or much closer or farther, gets a hint to line up with the overlay.
 function usePlateCheck(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   plate: string,
   guide: GuideKey | null,
+  previousUrl: string | null,
   active: boolean,
 ) {
-  const sendRef = useRef<((guide: GuideKey | null) => Promise<void>) | null>(null);
+  const workerRef = useRef<Worker | null>(null);
   const busyRef = useRef(false);
+  const sentRef = useRef<{ at: number; guide: GuideKey | null; previousUrl: string | null }>({
+    at: 0,
+    guide: null,
+    previousUrl: null,
+  });
   const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
   // The latest reading and the corner it was taken for.
-  const [reading, setReading] = useState<{ guide: GuideKey | null; seenAt: number } | null>(null);
+  const [reading, setReading] = useState<{ guide: GuideKey | null; seenAt: number; pose: PlatePose | null } | null>(null);
+  // Where the plate was in the previous photo (null: not found there), by photo.
+  const [previous, setPrevious] = useState<{ url: string; pose: PlatePose | null } | null>(null);
   const [now, setNow] = useState(0);
 
   useEffect(() => {
     const worker = new Worker(new URL("./plate-worker.ts", import.meta.url), { type: "module" });
-    let sent = { at: 0, guide: null as GuideKey | null };
+    workerRef.current = worker;
     worker.onmessage = (event: MessageEvent<PlateResponse>) => {
       const msg = event.data;
       if (msg.type === "ready") setStatus("ready");
       else if (msg.type === "failed") setStatus("failed");
       else {
         busyRef.current = false;
+        const sent = sentRef.current;
+        if (msg.source === "previous") {
+          if (sent.previousUrl) setPrevious({ url: sent.previousUrl, pose: msg.pose });
+          return;
+        }
         const end = performance.now();
         performance.measure("plate-check", { start: sent.at, end, detail: { detMs: msg.detMs, recMs: msg.recMs } });
-        setReading((r) => ({
-          guide: sent.guide,
-          seenAt: msg.found ? end : r?.guide === sent.guide ? r.seenAt : 0,
-        }));
+        setReading((r) =>
+          msg.found
+            ? { guide: sent.guide, seenAt: end, pose: msg.pose }
+            : r?.guide === sent.guide
+              ? r
+              : { guide: sent.guide, seenAt: 0, pose: null },
+        );
       }
     };
     worker.onerror = () => setStatus("failed");
     worker.postMessage({ type: "load", base: PLATE_MODELS } satisfies PlateRequest);
+    return () => {
+      worker.terminate();
+      workerRef.current = null;
+    };
+  }, []);
 
+  useEffect(() => {
+    if (!active || status !== "ready") return;
     const canvas = document.createElement("canvas");
-    sendRef.current = async (forGuide) => {
+    const send = async () => {
+      const worker = workerRef.current;
+      if (!worker) return;
+      // The previous photo first, once per photo.
+      if (previousUrl && previous?.url !== previousUrl) {
+        let frame: ImageBitmap;
+        try {
+          const img = new Image();
+          img.crossOrigin = "anonymous";
+          img.src = previousUrl;
+          await img.decode();
+          frame = await createImageBitmap(img);
+        } catch {
+          // Unreadable: compare nothing for this photo rather than retry forever.
+          setPrevious({ url: previousUrl, pose: null });
+          busyRef.current = false;
+          return;
+        }
+        sentRef.current = { ...sentRef.current, previousUrl };
+        worker.postMessage({ type: "check", frame, plate, source: "previous" } satisfies PlateRequest, [frame]);
+        return;
+      }
       const video = videoRef.current;
       if (!video || video.readyState < 2 || !video.videoWidth) throw new Error("No frame");
       const { sx, sy, sw, sh } = visibleCrop(video);
@@ -257,31 +318,33 @@ function usePlateCheck(
       canvas.height = Math.round(sh * scale);
       canvas.getContext("2d")?.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       const frame = await createImageBitmap(canvas);
-      sent = { at: performance.now(), guide: forGuide };
-      worker.postMessage({ type: "check", frame, plate } satisfies PlateRequest, [frame]);
+      sentRef.current = { at: performance.now(), guide, previousUrl: sentRef.current.previousUrl };
+      worker.postMessage({ type: "check", frame, plate, source: "frame" } satisfies PlateRequest, [frame]);
     };
-    return () => {
-      worker.terminate();
-      sendRef.current = null;
-    };
-  }, [videoRef, plate]);
-
-  useEffect(() => {
-    if (!active || status !== "ready") return;
     const timer = setInterval(() => {
       setNow(performance.now());
-      if (!sendRef.current || busyRef.current) return;
+      if (busyRef.current) return;
       busyRef.current = true;
-      sendRef.current(guide).catch(() => {
+      send().catch(() => {
         busyRef.current = false;
       });
     }, LIVE_CHECK_MS);
     return () => clearInterval(timer);
-  }, [active, status, guide]);
+  }, [active, status, guide, plate, previousUrl, previous, videoRef]);
 
   // Nothing to say until this corner has been checked at least once.
   if (!active || status !== "ready" || reading?.guide !== guide) return { plateHint: null };
-  if (now - reading.seenAt < PLATE_SEEN_MS) return { plateHint: { dot: "bg-good", text: "看得到車牌，可以拍了" } };
   const end = guide === 1 || guide === 2 ? "車頭" : "車尾";
-  return { plateHint: { dot: "bg-warning", text: `看不到車牌，請拍到${end}和車牌` } };
+  if (now - reading.seenAt >= PLATE_SEEN_MS) {
+    return { plateHint: { dot: "bg-warning", text: `看不到車牌，請拍到${end}和車牌` } };
+  }
+  const before = previous?.url === previousUrl ? previous.pose : null;
+  const pose = before && reading.pose ? comparePose(before, reading.pose) : "same";
+  const text = {
+    same: "看得到車牌，可以拍了",
+    moved: "角度跟上次不同，請對齊上次的照片",
+    closer: "比上次近，請往後退一點",
+    farther: "比上次遠，請靠近一點",
+  }[pose];
+  return { plateHint: { dot: pose === "same" ? "bg-good" : "bg-warning", text } };
 }

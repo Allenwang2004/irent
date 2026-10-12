@@ -43,3 +43,27 @@ export function matchesPlate(texts: string[], expected: string) {
   const want = normalizePlate(expected);
   return texts.some((t) => candidates(t).some((c) => edits(c, want) <= MATCH_EDITS));
 }
+
+// Where a plate sits in a frame, in fractions of the frame (3:4 viewfinder).
+export type PlatePose = { cx: number; cy: number; width: number; aspect: number };
+
+// Largest differences from the previous photo still counted as the same shot.
+// Measured on the hackathon pickup/return pairs: 95% of
+// matching pairs pass, 77% of visibly mis-aimed ones and nearly all shots of the
+// other side of the car are caught (front and rear of the same side often look alike).
+const MAX_SHIFT = 0.18;
+const MAX_SIZE = 0.35; // |log| of the width ratio: about 1.4x
+const MAX_SHAPE = 0.4; // |log| of the aspect change
+
+export type PoseCheck = "same" | "moved" | "closer" | "farther";
+
+export function comparePose(previous: PlatePose, current: PlatePose): PoseCheck {
+  const shift = Math.hypot(current.cx - previous.cx, current.cy - previous.cy);
+  const size = Math.log(current.width / previous.width);
+  const shape = Math.abs(Math.log(current.aspect / previous.aspect));
+  // A different spot or angle also changes the size, so report it first.
+  if (shift > MAX_SHIFT || shape > MAX_SHAPE) return "moved";
+  if (size > MAX_SIZE) return "closer";
+  if (size < -MAX_SIZE) return "farther";
+  return "same";
+}
