@@ -2,13 +2,23 @@
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { GuideKey } from "@/lib/inspection";
-import { analyzeFrame, type QualityResult } from "@/lib/quality";
+import { analyzeFrame, muchDarkerThan, type QualityResult } from "@/lib/quality";
 import { Guide } from "./guides";
+import type { PlateRequest, PlateResponse } from "./plate-worker";
 
 // The viewfinder, the guide and the saved photo all share this shape.
 const ASPECT = 3 / 4;
 const LIVE_CHECK_MS = 500;
 const CAPTURE_JPEG_QUALITY = 0.92;
+
+// Live plate check on the four corner shots (guides 1-4; 1 and 2 are the front).
+// Frames go to a worker at most this large; a reading counts as "seen" for a
+// moment so the hint does not flicker between frames.
+const PLATE_GUIDES = new Set<GuideKey>([1, 2, 3, 4]);
+const PLATE_FRAME_LONG_SIDE = 1280;
+const PLATE_SEEN_MS = 1500;
+const PLATE_MODELS = "/models";
+
 
 export type CameraHandle = {
   capture: () => Promise<Blob>;
@@ -23,6 +33,8 @@ type Props = {
   // Previous photo of this view, drawn faintly so the new shot can match it.
   reference?: string | null;
   plate: string;
+  // Mean luma of the previous photo of this corner, to warn when it is now much darker.
+  previousLuma: number | null;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
   // torch: whether the phone lets the page switch its light on.
@@ -42,10 +54,12 @@ function visibleCrop(video: HTMLVideoElement) {
   return { sx: 0, sy: (vh - h) / 2, sw: vw, sh: h };
 }
 
-export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, onUnavailable }: Props) {
+export function CameraView({ ref, guide, reference, plate, previousLuma, liveCheck, onReady, onUnavailable }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
+  const plateCheck = guide !== null && PLATE_GUIDES.has(guide);
+  const { plateHint } = usePlateCheck(videoRef, plate, guide, liveCheck && plateCheck);
   const onReadyRef = useRef(onReady);
   const onUnavailableRef = useRef(onUnavailable);
   useEffect(() => {
@@ -138,7 +152,11 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
     },
   }));
 
-  const hint = liveCheck ? liveHint(live) : null;
+  const lightHint =
+    live && muchDarkerThan(previousLuma, live.metrics.meanLuma)
+      ? { dot: "bg-warning", text: "比上次暗很多，請開補光或移到亮處" }
+      : null;
+  const hint = liveCheck ? (qualityHint(live) ?? lightHint ?? plateHint ?? GOOD_HINT) : null;
 
   return (
     <>
@@ -172,17 +190,98 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
   );
 }
 
-// Short, one-line versions of the post-capture messages, worst issue first.
-function liveHint(result: QualityResult | null) {
+const GOOD_HINT = { dot: "bg-good", text: "畫面清楚，可以拍了" };
+
+// Short, one-line versions of the post-capture messages, worst issue first;
+// null when the frame is fine.
+function qualityHint(result: QualityResult | null) {
   if (!result) return { dot: "bg-white/60", text: "對準後拍照" };
   const issue =
     result.issues.find((i) => i.level === "fail") ?? result.issues.find((i) => i.level === "warn");
-  if (!issue) return { dot: "bg-good", text: "畫面清楚，可以拍了" };
+  if (!issue) return null;
   const fail = issue.level === "fail";
   const text = {
     dark: fail ? "太暗了，請移到亮處或開補光" : "畫面偏暗",
     blurry: fail ? "畫面模糊，請拿穩手機" : "畫面有點模糊，請拿穩",
     overexposed: fail ? "反光太強，請換個角度" : "有反光，請注意",
+    darker: "比上次暗很多，請開補光或移到亮處",
   }[issue.code];
   return { dot: fail ? "bg-critical" : "bg-warning", text };
+}
+
+// Every LIVE_CHECK_MS, while the worker is free, send the visible frame to the
+// plate worker. A slow phone simply checks less often; the viewfinder and the
+// shutter never wait for it. Models load in the background when the camera
+// opens, so they are usually ready by the corner shots; if they never load, the
+// hints are the quality ones only.
+function usePlateCheck(
+  videoRef: React.RefObject<HTMLVideoElement | null>,
+  plate: string,
+  guide: GuideKey | null,
+  active: boolean,
+) {
+  const sendRef = useRef<((guide: GuideKey | null) => Promise<void>) | null>(null);
+  const busyRef = useRef(false);
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
+  // The latest reading and the corner it was taken for.
+  const [reading, setReading] = useState<{ guide: GuideKey | null; seenAt: number } | null>(null);
+  const [now, setNow] = useState(0);
+
+  useEffect(() => {
+    const worker = new Worker(new URL("./plate-worker.ts", import.meta.url), { type: "module" });
+    let sent = { at: 0, guide: null as GuideKey | null };
+    worker.onmessage = (event: MessageEvent<PlateResponse>) => {
+      const msg = event.data;
+      if (msg.type === "ready") setStatus("ready");
+      else if (msg.type === "failed") setStatus("failed");
+      else {
+        busyRef.current = false;
+        const end = performance.now();
+        performance.measure("plate-check", { start: sent.at, end, detail: { detMs: msg.detMs, recMs: msg.recMs } });
+        setReading((r) => ({
+          guide: sent.guide,
+          seenAt: msg.found ? end : r?.guide === sent.guide ? r.seenAt : 0,
+        }));
+      }
+    };
+    worker.onerror = () => setStatus("failed");
+    worker.postMessage({ type: "load", base: PLATE_MODELS } satisfies PlateRequest);
+
+    const canvas = document.createElement("canvas");
+    sendRef.current = async (forGuide) => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2 || !video.videoWidth) throw new Error("No frame");
+      const { sx, sy, sw, sh } = visibleCrop(video);
+      const scale = Math.min(1, PLATE_FRAME_LONG_SIDE / Math.max(sw, sh));
+      canvas.width = Math.round(sw * scale);
+      canvas.height = Math.round(sh * scale);
+      canvas.getContext("2d")?.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      const frame = await createImageBitmap(canvas);
+      sent = { at: performance.now(), guide: forGuide };
+      worker.postMessage({ type: "check", frame, plate } satisfies PlateRequest, [frame]);
+    };
+    return () => {
+      worker.terminate();
+      sendRef.current = null;
+    };
+  }, [videoRef, plate]);
+
+  useEffect(() => {
+    if (!active || status !== "ready") return;
+    const timer = setInterval(() => {
+      setNow(performance.now());
+      if (!sendRef.current || busyRef.current) return;
+      busyRef.current = true;
+      sendRef.current(guide).catch(() => {
+        busyRef.current = false;
+      });
+    }, LIVE_CHECK_MS);
+    return () => clearInterval(timer);
+  }, [active, status, guide]);
+
+  // Nothing to say until this corner has been checked at least once.
+  if (!active || status !== "ready" || reading?.guide !== guide) return { plateHint: null };
+  if (now - reading.seenAt < PLATE_SEEN_MS) return { plateHint: { dot: "bg-good", text: "看得到車牌，可以拍了" } };
+  const end = guide === 1 || guide === 2 ? "車頭" : "車尾";
+  return { plateHint: { dot: "bg-warning", text: `看不到車牌，請拍到${end}和車牌` } };
 }
