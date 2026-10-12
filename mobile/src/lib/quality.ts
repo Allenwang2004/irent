@@ -31,7 +31,7 @@ export type QualityMetrics = {
 };
 
 export type QualityIssue = {
-  code: "blurry" | "dark" | "overexposed";
+  code: "blurry" | "dark" | "overexposed" | "darker";
   level: "fail" | "warn";
   message: string;
 };
@@ -110,6 +110,48 @@ export function judge(metrics: QualityMetrics): QualityResult {
 
   const verdict = issues.some((i) => i.level === "fail") ? "fail" : issues.length ? "warn" : "pass";
   return { verdict, metrics, issues };
+}
+
+// Compared with the previous photo of the same corner: a shot much darker than
+// it (night after a daytime pickup, a dark garage after a sunny lot) hides the
+// detail the damage comparison needs, even when it is bright enough on its own.
+// On the hackathon pairs this flags 17 of 288 (6%), all visibly much darker:
+// below 60% of the previous photo's mean luma and itself below 80.
+const DARKER_RATIO = 0.6;
+const DARKER_MAX_LUMA = 80;
+
+export function muchDarkerThan(previousLuma: number | null | undefined, luma: number) {
+  return previousLuma != null && luma < previousLuma * DARKER_RATIO && luma < DARKER_MAX_LUMA;
+}
+
+export const DARKER_ISSUE: QualityIssue = {
+  code: "darker",
+  level: "warn",
+  message: "比上次拍的暗很多，車身細節可能比不出來。建議開補光或移到亮處再拍。",
+};
+
+// Adds the comparison with the previous photo to a finished check.
+export function withPrevious(result: QualityResult, previousLuma: number | null | undefined): QualityResult {
+  if (!muchDarkerThan(previousLuma, result.metrics.meanLuma)) return result;
+  if (result.issues.some((i) => i.code === "dark")) return result;
+  const issues = [...result.issues, DARKER_ISSUE];
+  return { ...result, issues, verdict: result.verdict === "fail" ? "fail" : "warn" };
+}
+
+// Mean luma of an image (the previous photo), with the same downscaling as the check.
+export async function imageLuma(url: string): Promise<number> {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.src = url;
+  await img.decode();
+  const canvas = document.createElement("canvas");
+  const scale = Math.min(1, ANALYSIS_LONG_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
+  canvas.width = Math.max(1, Math.round(img.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas is not supported");
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  return analyzePixels(ctx.getImageData(0, 0, canvas.width, canvas.height).data, canvas.width, canvas.height).meanLuma;
 }
 
 // Quick check on a live camera frame, used for hints before the shutter is

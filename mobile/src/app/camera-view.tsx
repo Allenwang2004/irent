@@ -2,7 +2,7 @@
 
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from "react";
 import type { GuideKey } from "@/lib/inspection";
-import { analyzeFrame, type QualityResult } from "@/lib/quality";
+import { analyzeFrame, muchDarkerThan, type QualityResult } from "@/lib/quality";
 import { Guide } from "./guides";
 import type { PlateRequest, PlateResponse } from "./plate-worker";
 
@@ -33,6 +33,8 @@ type Props = {
   // Previous photo of this view, drawn faintly so the new shot can match it.
   reference?: string | null;
   plate: string;
+  // Mean luma of the previous photo of this corner, to warn when it is now much darker.
+  previousLuma: number | null;
   // Live hints run only while the user is aiming, not while reviewing a shot.
   liveCheck: boolean;
   // torch: whether the phone lets the page switch its light on.
@@ -52,7 +54,7 @@ function visibleCrop(video: HTMLVideoElement) {
   return { sx: 0, sy: (vh - h) / 2, sw: vw, sh: h };
 }
 
-export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, onUnavailable }: Props) {
+export function CameraView({ ref, guide, reference, plate, previousLuma, liveCheck, onReady, onUnavailable }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [live, setLive] = useState<QualityResult | null>(null);
@@ -150,7 +152,11 @@ export function CameraView({ ref, guide, reference, plate, liveCheck, onReady, o
     },
   }));
 
-  const hint = liveCheck ? (qualityHint(live) ?? plateHint ?? GOOD_HINT) : null;
+  const lightHint =
+    live && muchDarkerThan(previousLuma, live.metrics.meanLuma)
+      ? { dot: "bg-warning", text: "比上次暗很多，請開補光或移到亮處" }
+      : null;
+  const hint = liveCheck ? (qualityHint(live) ?? lightHint ?? plateHint ?? GOOD_HINT) : null;
 
   return (
     <>
@@ -198,6 +204,7 @@ function qualityHint(result: QualityResult | null) {
     dark: fail ? "太暗了，請移到亮處或開補光" : "畫面偏暗",
     blurry: fail ? "畫面模糊，請拿穩手機" : "畫面有點模糊，請拿穩",
     overexposed: fail ? "反光太強，請換個角度" : "有反光，請注意",
+    darker: "比上次暗很多，請開補光或移到亮處",
   }[issue.code];
   return { dot: fail ? "bg-critical" : "bg-warning", text };
 }

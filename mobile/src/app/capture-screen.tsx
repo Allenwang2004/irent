@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { GuideKey } from "@/lib/inspection";
-import { preparePhoto, type PreparedPhoto, type QualityResult } from "@/lib/quality";
+import { imageLuma, preparePhoto, withPrevious, type PreparedPhoto, type QualityResult } from "@/lib/quality";
 import { CameraView, type CameraHandle } from "./camera-view";
 import { FlashOff, FlashOn } from "./icons";
 
@@ -71,12 +71,14 @@ export function CaptureScreen({
   const [error, setError] = useState<string | null>(null);
   const cameraRef = useRef<CameraHandle>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const previousLuma = usePreviousLuma(shot.reference);
 
   async function check(source: Blob) {
     setBusy(true);
     setError(null);
     try {
-      onShot(await preparePhoto(source));
+      const photo = await preparePhoto(source);
+      onShot({ ...photo, quality: withPrevious(photo.quality, previousLuma) });
     } catch {
       setError("無法讀取這張照片，請重拍。");
     } finally {
@@ -165,6 +167,7 @@ export function CaptureScreen({
               guide={shot.guide}
               reference={showReference ? shot.reference : null}
               plate={plate}
+              previousLuma={previousLuma}
               liveCheck={aiming && camera.status === "ready"}
               onReady={(canTorch) => {
                 setCamera({ status: "ready" });
@@ -256,6 +259,25 @@ export function CaptureScreen({
       </div>
     </main>
   );
+}
+
+// Brightness of the previous photo of this corner, measured once when it loads,
+// so new shots can be compared with it. Null while loading or if it cannot be read.
+function usePreviousLuma(url: string | undefined) {
+  const [measured, setMeasured] = useState<{ url: string; luma: number } | null>(null);
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    imageLuma(url)
+      .then((luma) => {
+        if (!cancelled) setMeasured({ url, luma });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return measured && measured.url === url ? measured.luma : null;
 }
 
 const BANNER = {
