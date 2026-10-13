@@ -118,16 +118,29 @@ export const DEMO = {
 };
 
 // Where the real demo recordings go. `scene` is used to show how long the clip runs.
+// S5e (the car list turning "整備中") stays as the animated phone screen, no recording.
 // A recording longer than its slot can be trimmed here instead of in an editor:
 // add `from: 12` to skip the first 12 seconds, `rate: 3` to play it 3x faster.
-export const DEMO_SHOTS: Record<"s2" | "a" | "b" | "c" | "e" | "f" | "g", { n: number; scene: string; file: string; what: string; from?: number; rate?: number }> = {
+// `taps`: where a finger pressed in a phone recording (seconds into the clip; x, y in
+// screen points, 390 x 844), drawn as a tap mark because iOS recordings don't show touches.
+// `mock`: no recording for this one; the animated screen stays (S5b and S5c use the real car photo and video).
+export const DEMO_SHOTS: Record<"s2" | "a" | "b" | "c" | "f" | "g", { n: number; scene: string; file: string; what: string; from?: number; rate?: number; mock?: boolean; taps?: { at: number; x: number; y: number }[] }> = {
   s2: { n: 1, scene: "S2", file: "demo/s2-reviews.mp4", what: "評論後台：來源、問題分類、處理狀態" },
-  a: { n: 2, scene: "S5a", file: "demo/s5a-pickup.mp4", what: "取車：已記錄的損傷 → 補拍特寫" },
-  b: { n: 3, scene: "S5b", file: "demo/s5b-camera.mp4", what: "相機：疊影對齊 → 車牌、遠近提示 → 通過" },
-  c: { n: 4, scene: "S5c", file: "demo/s5c-return.mp4", what: "還車：開始還車 → 車內 → 鎖門 → 車外" },
-  e: { n: 5, scene: "S5e", file: "demo/s5e-vehicles.mp4", what: "取車清單：車輛變成整備中" },
-  f: { n: 6, scene: "S5f", file: "demo/s5f-alerts.mp4", what: "後台預警：確認車損、駁回誤報" },
-  g: { n: 7, scene: "S5g", file: "demo/s5g-receipt.mp4", what: "歷史訂單 → 還車確認 → 取車確認" },
+  a: { n: 0, mock: true, scene: "S5a", file: "demo/s5a-pickup.mp4", what: "取車：已記錄的損傷 → 補拍特寫" },
+  b: { n: 0, mock: true, scene: "S5b", file: "demo/s5b-camera.mp4", what: "相機：疊影對齊 → 車牌、遠近提示 → 通過" },
+  c: { n: 0, mock: true, scene: "S5c", file: "demo/s5c-return.mp4", what: "還車：開始還車 → 車內 → 鎖門 → 車外" },
+  f: { n: 2, scene: "S5f", file: "demo/s5f-alerts.mp4", what: "後台預警：確認車損、駁回誤報" },
+  g: {
+    n: 3,
+    scene: "S5g",
+    file: "demo/s5g-receipt.mp4",
+    what: "歷史訂單 → 還車確認 → 取車確認",
+    // RDQ-1950「還車確認」, then RDE-6160「取車確認」 (going back used Safari's back button, cropped off)
+    taps: [
+      { at: 1.5, x: 278, y: 323 },
+      { at: 4.72, x: 112, y: 491 },
+    ],
+  },
 };
 export type DemoShotId = keyof typeof DEMO_SHOTS;
 
@@ -175,7 +188,7 @@ export const DEMO_UI = {
   mockLabel: "示意畫面",
   mockNote: "依 App 與後台實際介面製作",
   plate: "ABC-1234",
-  carModel: "Toyota Yaris",
+  carModel: "Toyota Camry",
   // phone: pickup intro (mobile/src/app/inspection-flow.tsx)
   back: "返回",
   pickupTitle: "取車：檢查車輛狀況",
@@ -222,7 +235,7 @@ export const DEMO_UI = {
   plateLabel: "車牌",
   // phone: return start (in-use.tsx, inspection-flow.tsx)
   inUseTitle: "用車中",
-  inUseSub: "ABC-1234・Toyota Yaris",
+  inUseSub: "ABC-1234・Toyota Camry",
   startReturn: "開始還車",
   billingStopped: "計費已停在 16:30",
   returnRule: "請在 10 分鐘內拍完車內照片、下車並按「下一步」鎖門；超過時間會自動取消還車。",
@@ -267,8 +280,8 @@ export const DEMO_UI = {
   clear: "沒有異常",
   // phone: receipt (mobile/src/app/records/[inspectionId]/page.tsx, lib/records.ts)
   receiptLinks: ["歷史訂單", "回到首頁"],
-  returnMeta: "ABC-1234・Toyota Yaris・2026年10月10日 下午4:30",
-  pickupMeta: "ABC-1234・Toyota Yaris・2026年10月10日 下午2:05",
+  returnMeta: "ABC-1234・Toyota Camry・2026年10月10日 下午4:30",
+  pickupMeta: "ABC-1234・Toyota Camry・2026年10月10日 下午2:05",
   receiptSummary: (n: number) => `AI 檢查發現 ${n} 項需要留意的地方。以下是初步判讀，以營運人員確認的結果為準。`,
   reviewPending: "AI 初步判讀",
   reviewConfirmed: "營運人員已確認",
@@ -323,6 +336,21 @@ export const DEMO_UI = {
   calloutSort: "最嚴重的問題排在最前面",
   calloutPending: "待處理",
   calloutPause: "暫停出租",
+  // the same callouts when the real recording (demo/s5f-alerts.mp4) is in: the cars in it
+  recNextCar: "RDU-6956",
+  recKnownTitle: "已記錄的損傷",
+  recNewDamage: "左前保險桿・破裂・嚴重",
+  recFreeCar: "RDE-6160",
+  // S5f: what happens to a confirmed new damage (the same rule as supabase/05_operations.sql)
+  branchTitle: "確認是新車損",
+  branchRepair: "需要立即維修",
+  branchRepairDo: "先送修",
+  branchRepairNote: "工單：檢修，修好前暫停出租",
+  branchEg: "例：",
+  branchMinor: "小損傷",
+  branchMinorDo: "恢復出租",
+  branchMinorNote: "記進這台車的車損紀錄",
+  branchNext: "下一位取車時就看得到",
 };
 
 export const S5_PANELS = {

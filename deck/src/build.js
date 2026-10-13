@@ -105,22 +105,15 @@ async function iconDot(s, name, x, y, d = 0.62) {
   s.addImage({ data: await icon(name, HEX.red), x: x + (d - k) / 2, y: y + (d - k) / 2, w: k, h: k });
 }
 
-// Phone mock images (deckshots, PAD 130): 674 x 1128 CSS px, phone body 414 x 868 at (130, 110),
-// the rest is room for the drop shadow. Place them by the phone body: centre x, top y, body height.
-const IMG_W = 674, IMG_H = 1128, BODY_X = 130, BODY_Y = 110, BODY_W = 414, BODY_H = 868;
-const phone = (s, file, cx, top, bodyH) => {
-  const k = bodyH / BODY_H;
-  s.addImage({ path: path.join(IMG, file), altText: ALT[file] || "手機畫面示意", x: cx - (BODY_X + BODY_W / 2) * k, y: top - BODY_Y * k, w: IMG_W * k, h: IMG_H * k });
+// img/real/: screenshots of the prototype (Chrome, 2026/10/13, read only) and two frames of
+// the video (camera, return). See README for which ones contain the organiser's photos.
+const REAL = path.join(IMG, "real");
+const shot = (s, file, x, y, w, h, alt, o = {}) => {
+  s.addImage({ path: path.join(REAL, file), altText: alt, x, y, w, h });
+  s.addShape(o.round ? SH.ROUNDED_RECTANGLE : SH.RECTANGLE, Object.assign({ x, y, w, h, fill: { type: "none" }, line: { color: HEX.gray, width: 0.75 } }, o.round ? { rectRadius: 0.08 } : {}));
 };
-const bodyW = (bodyH) => (bodyH * BODY_W) / BODY_H;
-const ALT = {
-  "pickup.png": "手機畫面示意：取車時列出這台車已記錄的損傷",
-  "camera-ok.png": "手機畫面示意：相機畫面疊著上一次同角度照片，提示畫面清楚可以拍",
-  "camera-fail.png": "手機畫面示意：照片太暗，提示需重拍",
-  "receipt-return.png": "手機畫面示意：還車確認單，疑似新的車損，營運人員已確認",
-  "receipt-pickup.png": "手機畫面示意：取車確認單，車內清潔狀況記為上一位用戶留下",
-  "history.png": "手機畫面示意：歷史訂單，列出取車確認與還車確認",
-};
+const tag = (s, text, x, y, w, o = {}) =>
+  T(s, text, Object.assign({ shape: SH.ROUNDED_RECTANGLE, rectRadius: 0.05, x, y, w, h: 0.26, fill: { color: C.text1 }, color: C.background1, fontSize: 9.5, bold: true, align: "center", valign: "middle" }, o));
 
 const content = (section, kicker, title) => {
   const s = pres.addSlide({ masterName: "CONTENT", sectionTitle: section });
@@ -131,6 +124,7 @@ const content = (section, kicker, title) => {
 
 // ---------------------------------------------------------------- data
 const HOURLY = [1126, 1019, 704, 466, 345, 316, 280, 390, 638, 611, 664, 676, 1068, 1329, 1361, 1619, 2144, 1988, 1761, 1584, 1510, 1977, 2068, 1674];
+// Shown on page 6 as the review back office screenshot (img/real/d_reviews.png); kept here as the source numbers.
 const REVIEWS = [
   // 924 unique posts (46 Dcard posts were scraped twice), classified on title + content
   // with web/src/lib/review-categories.json. A post can fall into several categories.
@@ -200,19 +194,19 @@ async function build() {
           text: [
             { text: "1. 拍照時把關：疊影對齊上次照片，手機即時檢查畫質、車牌、角度與遠近，不合格當場重拍", options: { breakLine: true } },
             { text: "2. 送出後比對：後台 VLM 比對前後照片，判讀新車損、車內整潔、遺留物與卡片，三次判讀取多數", options: { breakLine: true } },
-            { text: "3. 發現問題自動處理：自動開工單、暫停出租；營運確認後記成已知車損，用戶看得到取還車確認單" },
+            { text: "3. 發現問題自動處理：自動開工單、暫停出租；嚴重車損先送修，小損傷記錄後恢復出租；用戶看得到取還車確認單" },
           ],
         },
       ],
-      [L("運用到的AI技術、\n服務或模型等資源"), { text: "Qwen 系列開源視覺語言模型（以 vLLM 自架推論，照片不外流）；\n手機端：PaddleOCR PP-OCRv4 車牌辨識（onnxruntime-web）與畫質檢查，都在瀏覽器內運算" }],
+      [L("運用到的AI技術、\n服務或模型等資源"), { text: "Qwen 系列開源視覺語言模型（以 vLLM 自架推論，照片不外流）；\n手機端：PaddleOCR PP-OCRv4 車牌辨識（onnxruntime-web）與畫質檢查，都在手機上運算；\n架構：App 拍照模組 → 車況資料庫 → 判讀佇列 → 自架 GPU 判讀服務 → 營運後台；確認結果回訓模型" }],
       [L("預期效益簡述"), { text: "主辦方 144 組取還車照片實測：車損召回率 100%、誤報率 3%。\n每天約 4,820 筆取還車全數檢查，所需人力由約 10–20 人降至 1–2 人（約 −90%）；\n不合格照片當場重拍；髒車與嚴重車損自動暫停出租；每次取還車都有確認單" }],
     ];
     s.addTable(rows, {
       x: MX, y: 1.45, w: CW, colW: [2.75, CW - 2.75],
-      fontFace: FONT, fontSize: 14, color: HEX.ink, valign: "middle",
+      fontFace: FONT, fontSize: 13.5, color: HEX.ink, valign: "middle",
       border: { type: "solid", pt: 0.75, color: HEX.line },
-      margin: [6, 10, 6, 10],
-      rowH: [0.44, 0.44, 0.44, 0.6, 1.45, 0.8, 1.0],
+      margin: [5, 10, 5, 10],
+      rowH: [0.4, 0.4, 0.4, 0.5, 1.25, 1.1, 0.98],
     });
     s.addNotes("提案摘要（不計入 15 頁）。欄位名稱與順序依官方範本。");
   }
@@ -246,7 +240,7 @@ async function build() {
       { text: "車損責任說不清" },
     ], { x: xs[0] + 0.3, y: top + 0.7, w: cw - 0.6, h: 2.8, fontSize: 14, color: C.text1, paraSpaceAfter: 2 });
     T(s, "3 個環節・9 個機制", { x: xs[1] + 0.3, y: top + 0.65, w: cw - 0.6, h: 0.5, fontSize: 22, bold: true });
-    [["拍照時", "手機當場檢查畫質、車牌與角度，\n還車先拍車內再鎖門"], ["送出後", "後台 AI 比對前後照片"], ["發現問題後", "自動開工單、營運確認，\n用戶看得到結果"]].forEach(([a, b], i) => {
+    [["拍照時", "手機當場檢查畫質、車牌與角度，\n還車先拍車內再鎖門"], ["送出後", "後台 AI 比對前後照片"], ["發現問題後", "自動開工單、嚴重車損先送修，\n用戶看得到結果"]].forEach(([a, b], i) => {
       chip(s, i + 1, xs[1] + 0.3, top + 1.35 + i * 0.75, 0.36);
       T(s, [{ text: a, options: { bold: true, breakLine: true } }, { text: b }], { x: xs[1] + 0.8, y: top + 1.3 + i * 0.75, w: cw - 1.1, h: 0.7, fontSize: 13.5 });
     });
@@ -329,15 +323,14 @@ async function build() {
   }
   {
     const s = content("2. 目標對象與痛點分析", "2　目標對象與痛點分析｜用戶端", "924 則評論裡，208 則跟車況有關");
-    T(s, "顧客評論依問題分類（則數，一則可屬多類）", { x: MX, y: 1.6, w: 6.4, h: 0.32, fontSize: 13, bold: true });
-    s.addChart(pres.charts.BAR, [{ name: "則數", labels: REVIEWS.map((r) => r.label), values: REVIEWS.map((r) => r.n) }], {
-      x: MX - 0.1, y: 1.95, w: 6.6, h: 3.95, barDir: "bar", barGapWidthPct: 45, catAxisOrientation: "maxMin",
-      chartColors: REVIEWS.map((r) => (r.related ? HEX.red : HEX.gray)), showLegend: false, showTitle: false,
-      showValue: true, dataLabelPosition: "outEnd", dataLabelFontSize: 11, dataLabelColor: HEX.ink2, dataLabelFontFace: "+mn-lt",
-      catAxisLabelFontSize: 11, catAxisLabelColor: HEX.ink2, catAxisLabelFontFace: "+mn-lt", catAxisLineShow: false,
-      valAxisHidden: true, valAxisMaxVal: 300, valGridLine: { style: "none" }, catGridLine: { style: "none" },
-    });
-    T(s, "來源：Google Play 682、PTT 130、Dcard 107、App Store 5 則\n（同一篇只算一次，2026/10/7 擷取）", { x: MX, y: 5.98, w: 6.4, h: 0.4, fontSize: 10, color: C.accent2 });
+    T(s, "我們做的評論管理後台（原型實機畫面）：924 則依問題自動分類", { x: MX, y: 1.6, w: 6.6, h: 0.32, fontSize: 13, bold: true });
+    {
+      const iw = 6.45, k = iw / 1102, ih = 640 * k, iy = 1.98;
+      shot(s, "d_reviews.png", MX, iy, iw, ih, "營運後台顧客評論頁實機截圖：924 則評論、App 平均 2.1 星、問題分類長條圖");
+      // the three categories about car condition
+      for (const cy of [438, 506, 573]) s.addShape(SH.ROUNDED_RECTANGLE, { x: MX + 18 * k, y: iy + (cy - 18) * k, w: (1062 - 18) * k, h: 36 * k, rectRadius: 0.04, fill: { type: "none" }, line: { color: C.accent1, width: 2 } });
+    }
+    T(s, "紅框：跟車況有關的三類。來源：Google Play 682、PTT 130、Dcard 107、App Store 5 則\n（同一篇只算一次，2026/10/7 擷取；一則可屬多類）", { x: MX, y: 5.86, w: 6.6, h: 0.4, fontSize: 10, color: C.accent2 });
 
     const rx = 7.35, rw = W - MX - rx;
     T(s, [{ text: "208 則", options: { fontSize: 36, bold: true, color: C.accent1 } }, { text: "　跟車況有關，占全部評論 22.5%", options: { fontSize: 15, bold: true } }], { x: rx, y: 1.55, w: rw, h: 0.7, valign: "middle" });
@@ -365,7 +358,7 @@ async function build() {
     const cols = [
       { gap: "補斷點 ① 拍照沒人檢查、③ 角度對不上", stage: "拍照時", who: "手機", mech: [[1, "已知車損提前告知", "取車時先列出已記錄的損傷"], [2, "上次照片疊影對齊", "上一次同角度照片疊在畫面上"], [3, "即時檢查畫質、車牌、角度", "站錯、太遠太近、太暗都提醒"], [4, "先拍車內，鎖門再拍車外", "按下還車就停止計費"]] },
       { gap: "補斷點 ② 人工看不完、③ 前後難比對", stage: "送出後", who: "後台 AI", mech: [[5, "取車比上次、還車比取車", "差異歸屬到對的人"], [6, "三次判讀、多數決", "無法比對的照片送人工確認"]] },
-      { gap: "補斷點 ② 看得太晚、處理靠人工", stage: "發現問題後", who: "系統・營運・用戶", mech: [[7, "自動開工單、暫停出租", "髒汙排清潔、嚴重車損排檢修"], [8, "營運確認，記成已知車損", "駁回誤報，工單自動取消、恢復出租"], [9, "用戶取還車確認單", "AI 初步判讀與營運確認狀態"]] },
+      { gap: "補斷點 ② 看得太晚、處理靠人工", stage: "發現問題後", who: "系統・營運・用戶", mech: [[7, "自動開工單、暫停出租", "髒汙排清潔、嚴重車損排檢修"], [8, "營運確認或駁回", "嚴重先送修；小損傷記錄後出租"], [9, "用戶取還車確認單", "AI 初步判讀與營運確認狀態"]] },
     ];
     cols.forEach((c, i) => {
       const x = MX + i * (cw + 0.29);
@@ -380,78 +373,75 @@ async function build() {
       });
       if (i === 1) T(s, "照片送出後自動檢查，\n用戶不必在現場等結果", { x: x + 0.82, y: 4.45, w: cw - 1.0, h: 0.62, fontSize: 12.5, italic: true, color: C.accent2 });
     });
-    T(s, "系統架構", { x: MX, y: 6.08, w: 0.95, h: 0.6, fontSize: 12, bold: true, color: C.text2, valign: "middle" });
-    const arch = [["手機 App", "Next.js 網頁"], ["Supabase", "資料庫、照片儲存"], ["VLM 檢查服務", "Qwen 系列，自架"], ["預警與工單", "資料庫自動觸發"], ["營運後台", "用戶確認單"]];
-    const ax0 = MX + 1.0, aw = 1.92, ag = (CW - 1.0 - aw * 5) / 4;
-    arch.forEach(([a, b], i) => {
-      const x = ax0 + i * (aw + ag);
-      outline(s, x, 6.08, aw, 0.6, { rectRadius: 0.08 });
-      T(s, [{ text: a, options: { bold: true, breakLine: true } }, { text: b, options: { color: C.text2, fontSize: 10.5 } }], { x: x + 0.05, y: 6.08, w: aw - 0.1, h: 0.6, fontSize: 12, align: "center", valign: "middle" });
-      if (i < 4) arrow(s, x + aw + 0.04, 6.38, x + aw + ag - 0.04, 6.38, { line: { color: C.accent2, width: 1.25, endArrowType: "triangle" } });
-    });
-    s.addNotes("整體架構：三個環節、9 個機制，補上三個斷點。拍照時（手機）：已知車損提前告知、疊影對齊、即時檢查畫質車牌角度、還車先拍車內再鎖門。送出後（後台 AI）：取車比上次、還車比取車；每張判讀三次取多數決。發現問題後：自動開工單與暫停出租、營運確認記成已知車損、用戶確認單。系統：Next.js 手機網頁、Supabase、自架 Qwen 系列 VLM、資料庫觸發的預警與工單、營運後台。");
+    box(s, MX, 6.08, CW, 0.6, { fill: { color: C.accent4 }, line: { color: C.accent4, width: 0 } });
+    T(s, [{ text: "9 個機制都已在原型實作：", options: { bold: true, color: C.accent1 } }, { text: "手機 App、AI 判讀服務與營運後台都能實際操作（第 8、9 頁為實機畫面，導入後的系統架構見第 12 頁）" }], { x: MX + 0.25, y: 6.08, w: CW - 0.5, h: 0.6, fontSize: 13.5, valign: "middle" });
+    s.addNotes("整體架構：三個環節、9 個機制，補上三個斷點。拍照時（手機）：已知車損提前告知、疊影對齊、即時檢查畫質車牌角度、還車先拍車內再鎖門。送出後（後台 AI）：取車比上次、還車比取車；每張判讀三次取多數決。發現問題後：自動開工單與暫停出租、營運確認或駁回（嚴重車損先送修，小損傷記成已知車損後恢復出租，誤報駁回）、用戶確認單。9 個機制都已在原型實作。");
   }
   {
     const s = content("3. 解決方案設計", "3　解決方案設計｜取還車流程", "用戶端：拍一次就拍對，還車不用回頭開門");
-    const lanes = [
-      { name: "取車", y: 1.6, steps: [["1", "看已知車損", "先列出這台車\n已記錄的損傷"], ["2", "對齊上次照片", "上一次同角度照片\n疊在畫面上"], ["3", "即時檢查", "畫質、車牌、\n角度、光線，\n不合格當場重拍"], ["", "損傷紀錄", "已知車損與新損傷\n可補拍特寫"], ["", "確認取車", "進入用車頁"]] },
-      { name: "還車", y: 3.75, steps: [["4", "開始還車", "按下就停止計費"], ["4", "先拍車內", "卡夾、前座、後座，\n10 分鐘內完成"], ["4", "下車鎖門", "關門後一鍵鎖門，\n不用等照片上傳"], ["3", "拍車外四角", "一樣有疊影\n與即時檢查"], ["9", "停車位置", "拍停車位置後送出；\n確認單在歷史訂單"]] },
+    // five phone screens: 1, 4, 5 are screenshots of the prototype; 2, 3 are frames of the video
+    const screens = [
+      { file: "s_pickup.png", n: ["1"], t: "看已知車損", d: "「這台車已記錄 1 處損傷」\n提醒用戶拍下來", alt: "原型實機截圖：取車拍照頁，提示這台車已記錄 1 處損傷" },
+      { file: "s_camera.png", n: ["2", "3"], t: "疊影對齊", d: "疊上次照片\n與輪廓，不合格當場重拍", alt: "說明影片畫面：相機疊著上一次同角度照片與車身輪廓虛線，車牌已模糊", video: true },
+      { file: "s_interior.png", n: ["4"], t: "先拍車內再鎖門", d: "按下還車即停計費\n拍完車內、下車鎖門", alt: "說明影片畫面：還車先拍車內，倒數計時，拍完確認鎖門", video: true },
+      { file: "s_history.png", n: ["9"], t: "歷史訂單", d: "每筆都有取車確認\n與還車確認", alt: "原型實機截圖：歷史訂單，每筆列出取車確認與還車確認狀態" },
+      { file: "s_receipt_return.png", n: ["9"], t: "還車確認單", d: "AI 初步判讀，\n以營運人員確認為準", alt: "原型實機截圖：還車確認單，疑似新的車損，AI 初步判讀" },
     ];
-    const lw = 0.62, gap = 0.22, lx = MX + lw + 0.2, bw = (CW - lw - 0.2 - gap * 4) / 5, bh = 1.8;
-    for (const lane of lanes) {
-      T(s, lane.name.split("").join("\n"), { shape: SH.ROUNDED_RECTANGLE, rectRadius: 0.1, x: MX, y: lane.y, w: lw, h: bh, fill: { color: C.accent1 }, color: C.background1, fontSize: 18, bold: true, align: "center", valign: "middle" });
-      lane.steps.forEach(([n, t, d], i) => {
-        const x = lx + i * (bw + gap);
-        box(s, x, lane.y, bw, bh);
-        if (n) chip(s, n, x + 0.18, lane.y + 0.2, 0.36);
-        T(s, t, { x: x + (n ? 0.62 : 0.18), y: lane.y + 0.17, w: bw - (n ? 0.72 : 0.3), h: 0.42, fontSize: 14, bold: true, valign: "middle" });
-        T(s, d, { x: x + 0.18, y: lane.y + 0.75, w: bw - 0.3, h: 0.95, fontSize: 12, color: C.text2 });
-        if (i < 4) T(s, "›", { x: x + bw - 0.04, y: lane.y + bh / 2 - 0.25, w: gap + 0.08, h: 0.5, fontSize: 20, bold: true, color: C.accent1, align: "center", valign: "middle" });
-      });
-    }
-    box(s, MX, 5.85, CW, 0.62, { fill: { color: C.accent4 }, line: { color: C.accent4, width: 0 } });
-    T(s, [{ text: "對應評論：", options: { bold: true, color: C.accent1 } }, { text: "「還車鎖門後才要拍內部照片，這很不合理」（Google Play・2026/07/12）" }], { x: MX + 0.25, y: 5.85, w: CW - 0.5, h: 0.62, fontSize: 13.5, valign: "middle" });
-    T(s, "紅色數字為機制編號", { x: MX, y: 6.62, w: CW, h: 0.25, fontSize: 10, color: C.accent2 });
+    const sw = 2.0, sg = (CW - sw * 5) / 4, sh = sw * 1512 / 790, sy = 2.05;
+    screens.forEach((sc, i) => {
+      const x = MX + i * (sw + sg);
+      sc.n.forEach((n, j) => chip(s, n, x + j * 0.38, 1.6, 0.32));
+      T(s, sc.t, { x: x + sc.n.length * 0.38 + 0.04, y: 1.57, w: sw - sc.n.length * 0.38, h: 0.38, fontSize: 13.5, bold: true, valign: "middle" });
+      shot(s, sc.file, x, sy, sw, sh, sc.alt);
+      T(s, sc.video ? [{ text: "影片畫面・", options: { color: C.accent1, bold: true } }, { text: sc.d }] : sc.d, { x, y: sy + sh + 0.1, w: sw + 0.15, h: 0.45, fontSize: 11.5, color: C.text2 });
+      if (i < 4) T(s, "›", { x: x + sw, y: sy + sh / 2 - 0.25, w: sg, h: 0.5, fontSize: 22, bold: true, color: C.accent1, align: "center", valign: "middle" });
+    });
+    T(s, [{ text: "對應評論：", options: { bold: true, color: C.accent1 } }, { text: "「還車鎖門後才要拍內部照片，這很不合理」（Google Play・2026/07/12）" }], { x: MX, y: 6.47, w: CW, h: 0.26, fontSize: 11.5, valign: "middle" });
+    T(s, "1、4、5 為原型實機截圖；2、3 為說明影片畫面（相機需要手機鏡頭，以實拍影片重現，車牌已模糊）", { x: MX, y: 6.75, w: CW, h: 0.22, fontSize: 10, color: C.accent2, valign: "middle" });
     s.addNotes("取還車流程。取車：先看到這台車已記錄的損傷；拍照時疊著上一次同角度的照片，手機每 0.5 秒檢查畫質、讀車牌判斷角度與遠近、比對光線，不合格當場重拍；可補拍損傷特寫後確認取車。還車：按開始還車，計費就停止；10 分鐘內先拍卡夾和前後座，下車關門後鎖門，鎖門不用等照片上傳；再拍車外四角與停車位置。之後在歷史訂單看得到取還車確認單。這直接回應評論裡「鎖門後才要拍內部照片」的抱怨。");
   }
   {
     const s = content("3. 解決方案設計", "3　解決方案設計｜營運流程", "營運端：AI 先篩、系統派工，人只做確認");
-    const iw = 7.0, ih = iw * 1560 / 2260;
-    s.addImage({ path: path.join(IMG, "admin_crop.png"), altText: "營運後台預警頁示意：一次取還車一張卡片，含比對照片與確認、駁回按鈕", x: MX, y: 1.6, w: iw, h: ih });
-    s.addShape(SH.RECTANGLE, { x: MX, y: 1.6, w: iw, h: ih, fill: { type: "none" }, line: { color: C.accent3, width: 1 } });
-    T(s, "營運後台・預警頁（示意畫面，依實際介面製作）", { x: MX, y: 1.6 + ih + 0.1, w: iw, h: 0.28, fontSize: 10, color: C.accent2 });
+    const iw = 6.45, ih = iw * 785 / 1102;
+    shot(s, "d_alerts.png", MX, 1.6, iw, ih, "營運後台預警頁實機截圖：RDQ-1950 還車新車損，比對基準與這次照片並排，工單檢修進行中、車輛暫停出租，下方有確認與駁回按鈕");
+    T(s, "營運後台・預警頁（原型實機畫面）：一次取還車一張卡片，最嚴重、等最久的排前面", { x: MX, y: 1.6 + ih + 0.08, w: iw, h: 0.28, fontSize: 10, color: C.accent2 });
 
-    const rx = 7.95, rw = W - MX - rx;
-    T(s, "預警寫入後，自動開工單", { x: rx, y: 1.55, w: rw, h: 0.32, fontSize: 15, bold: true });
-    T(s, "資料庫觸發，不需要人工轉單", { x: rx, y: 1.87, w: rw, h: 0.28, fontSize: 12, color: C.text2 });
+    const rx = MX + iw + 0.4, rw = W - MX - rx;
+    T(s, "預警寫入後，資料庫自動開工單", { x: rx, y: 1.55, w: rw, h: 0.32, fontSize: 15, bold: true });
     const hd = (t) => ({ text: t, options: { bold: true, color: HEX.white, fill: { color: HEX.ink } } });
+    const yes = { text: "是", options: { bold: true, color: HEX.red } };
     s.addTable([
       [hd("預警"), hd("工單"), hd("暫停出租")],
-      ["車內髒汙", "清潔", { text: "是", options: { bold: true, color: HEX.red } }],
-      ["高嚴重度新車損", "檢修", { text: "是", options: { bold: true, color: HEX.red } }],
+      ["車內髒汙", "清潔", yes],
+      ["嚴重新車損", "檢修", { text: "是", options: { bold: true, color: HEX.red } }],
       ["缺卡片、遺留物", "聯絡用戶", "否"],
       ["中低嚴重度車損", "由營運確認", "否"],
-    ], { x: rx, y: 2.25, w: rw, colW: [2.15, 1.5, rw - 3.65], fontFace: FONT, fontSize: 13, color: HEX.ink, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [4, 8, 4, 8], rowH: 0.38 });
+    ], { x: rx, y: 1.95, w: rw, colW: [2.1, 1.55, rw - 3.65], fontFace: FONT, fontSize: 12.5, color: HEX.ink, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [3, 8, 3, 8], rowH: 0.31 });
+    T(s, "工單頁（原型實機畫面）：嚴重車損自動開檢修工單，車輛暫停出租", { x: rx, y: 3.78, w: rw, h: 0.26, fontSize: 10, color: C.accent2, valign: "middle" });
+    const ww = rw, wh = ww * 132 / 746;
+    shot(s, "d_workorder1.png", rx, 4.06, ww, wh, "營運後台工單頁實機截圖：檢修 RDU-6956，車輛整備中、暫停出租中");
 
-    T(s, "營運人員只做確認", { x: rx, y: 4.35, w: rw, h: 0.32, fontSize: 15, bold: true });
-    T(s, "確認", { shape: SH.ROUNDED_RECTANGLE, rectRadius: 0.08, x: rx, y: 4.8, w: 0.85, h: 0.4, fill: { color: C.accent1 }, color: C.background1, fontSize: 13, bold: true, align: "center", valign: "middle" });
-    T(s, "記成已知車損，下一位取車時就看得到", { x: rx + 1.0, y: 4.8, w: rw - 1.0, h: 0.4, fontSize: 13.5, valign: "middle" });
-    T(s, "駁回", { shape: SH.ROUNDED_RECTANGLE, rectRadius: 0.08, x: rx, y: 5.32, w: 0.85, h: 0.4, fill: { color: C.background1 }, line: { color: C.accent2, width: 1 }, fontSize: 13, bold: true, align: "center", valign: "middle" });
-    T(s, "誤報時工單自動取消，車輛恢復出租", { x: rx + 1.0, y: 5.32, w: rw - 1.0, h: 0.4, fontSize: 13.5, valign: "middle" });
-    await iconDot(s, "FaSortAmountDown", rx + 0.2, 5.9, 0.45);
-    T(s, "一次取還車一張卡片，\n最嚴重、等最久的排前面", { x: rx + 1.0, y: 5.84, w: rw - 1.0, h: 0.6, fontSize: 13.5, valign: "middle" });
-    s.addNotes("營運流程。VLM 檢查後寫入預警，資料庫自動開工單：車內髒汙排清潔、高嚴重度新車損排檢修，兩者都暫停出租；缺卡片或遺留物排聯絡用戶。營運人員在預警頁一次處理一筆取還車，最嚴重、等最久的排前面；確認的車損記成已知車損，駁回誤報時工單自動取消、車輛恢復出租。");
+    const cy = 4.06 + wh + 0.18;
+    T(s, "營運人員只做確認或駁回", { x: rx, y: cy, w: rw, h: 0.3, fontSize: 14, bold: true });
+    const rule = (y, label, filled, text) => {
+      T(s, label, Object.assign({ shape: SH.ROUNDED_RECTANGLE, rectRadius: 0.08, x: rx, y, w: 0.72, h: 0.34, fontSize: 12, bold: true, align: "center", valign: "middle" }, filled ? { fill: { color: C.accent1 }, color: C.background1 } : { fill: { color: C.background1 }, line: { color: C.accent2, width: 1 } }));
+      T(s, text, { x: rx + 0.85, y, w: rw - 0.85, h: 0.34, fontSize: 12.5, valign: "middle" });
+    };
+    rule(cy + 0.36, "確認", true, [{ text: "嚴重新車損：", options: { bold: true } }, { text: "先送修，修好前暫停出租" }]);
+    rule(cy + 0.74, "確認", true, [{ text: "小損傷：", options: { bold: true } }, { text: "恢復出租，記成已知車損，下一位看得到" }]);
+    rule(cy + 1.12, "駁回", false, [{ text: "誤報：", options: { bold: true } }, { text: "工單自動取消，車輛恢復出租" }]);
+    s.addNotes("營運流程。VLM 檢查後寫入預警，資料庫自動開工單：車內髒汙排清潔、高嚴重度新車損排檢修，兩者都暫停出租；缺卡片或遺留物排聯絡用戶。營運人員在預警頁一次處理一筆取還車，最嚴重、等最久的排前面。確認是新車損時：嚴重的維持檢修工單，修好前暫停出租；小損傷恢復出租，並記成這台車的已知車損，下一位取車時會被提醒拍下來。駁回誤報時，工單自動取消、車輛恢復出租。左邊與右下都是原型的實機畫面。");
   }
 
   // ============================================================ 4 AI
   pres.addSection({ title: "4. AI 應用方法" });
   {
-    const s = content("4. AI 應用方法", "4　AI 應用方法｜AI 的角色", "手機端把關拍照求快，後台 AI 判讀車況求準");
-    const lw = 5.55, rx = MX + lw + 0.3, rw = W - MX - rx, top = 1.6, ph = 4.4;
+    const s = content("4. AI 應用方法", "4　AI 應用方法｜AI 的角色與選用原因", "手機端把關拍照求快，後台 AI 判讀車況求準");
+    const lw = 5.55, rx = MX + lw + 0.3, rw = W - MX - rx, top = 1.55, ph = 3.45;
     box(s, MX, top, lw, ph);
     box(s, rx, top, rw, ph);
     await iconDot(s, "FaMobileAlt", MX + 0.3, top + 0.28, 0.62);
-    T(s, [{ text: "手機端｜即時檢查", options: { bold: true, fontSize: 18, breakLine: true } }, { text: "要快：在瀏覽器內運算，拍的當下就回饋", options: { color: C.accent1, fontSize: 13, bold: true } }], { x: MX + 1.1, y: top + 0.25, w: lw - 1.3, h: 0.72 });
+    T(s, [{ text: "手機端｜即時檢查", options: { bold: true, fontSize: 18, breakLine: true } }, { text: "要快：在手機上運算，把不能用的照片擋在源頭", options: { color: C.accent1, fontSize: 13, bold: true } }], { x: MX + 1.1, y: top + 0.2, w: lw - 1.3, h: 0.72 });
     {
       const hd = (t) => ({ text: t, options: { bold: true, color: HEX.white, fill: { color: HEX.ink } } });
       const k = (t) => ({ text: t, options: { bold: true } });
@@ -461,12 +451,11 @@ async function build() {
         [k("車牌"), "PaddleOCR 每 0.5 秒讀車牌；\n整張入鏡 92% 讀對，從未認錯車"],
         [k("角度、遠近"), "比對上次照片的車牌位置與大小；\n站對 95% 通過，站錯 77% 抓到"],
         [k("光線"), "比上次暗很多就提醒\n（主辦方照片約 6%）"],
-      ], { x: MX + 0.3, y: top + 1.1, w: lw - 0.6, colW: [1.2, lw - 0.6 - 1.2], fontFace: FONT, fontSize: 12.5, color: HEX.ink, fill: { color: HEX.white }, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [3, 8, 3, 8], rowH: [0.34, 0.58, 0.58, 0.58, 0.58] });
+      ], { x: MX + 0.3, y: top + 0.95, w: lw - 0.6, colW: [1.2, lw - 0.6 - 1.2], fontFace: FONT, fontSize: 12, color: HEX.ink, fill: { color: HEX.white }, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [2, 8, 2, 8], rowH: [0.3, 0.5, 0.5, 0.5, 0.5] });
     }
-    T(s, "角色：把不能用、比不起來的照片擋在源頭", { x: MX + 0.3, y: top + 3.92, w: lw - 0.6, h: 0.4, fontSize: 13.5, bold: true, color: C.accent1 });
 
     await iconDot(s, "FaServer", rx + 0.3, top + 0.28, 0.62);
-    T(s, [{ text: "後台｜Qwen 系列視覺語言模型（自架）", options: { bold: true, fontSize: 18, breakLine: true } }, { text: "要準：用戶離開後，再仔細判讀", options: { color: C.accent1, fontSize: 13, bold: true } }], { x: rx + 1.1, y: top + 0.25, w: rw - 1.3, h: 0.72 });
+    T(s, [{ text: "後台｜Qwen 系列視覺語言模型（自架）", options: { bold: true, fontSize: 18, breakLine: true } }, { text: "要準：用戶離開後，再仔細判讀", options: { color: C.accent1, fontSize: 13, bold: true } }], { x: rx + 1.1, y: top + 0.2, w: rw - 1.3, h: 0.72 });
     const hd = (t) => ({ text: t, options: { bold: true, color: HEX.white, fill: { color: HEX.ink } } });
     s.addTable([
       [hd("看哪裡"), hd("判讀什麼")],
@@ -474,12 +463,27 @@ async function build() {
       ["車內前座、後座", "整潔度（乾淨／普通／髒汙）與遺留物"],
       ["加油卡／停車卡", "卡片是否在卡夾裡"],
       ["用戶回報的損傷", "核對用戶自己拍下的損傷"],
-    ], { x: rx + 0.3, y: top + 1.15, w: rw - 0.6, colW: [1.75, rw - 0.6 - 1.75], fontFace: FONT, fontSize: 13, color: HEX.ink, fill: { color: HEX.white }, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [3, 8, 3, 8], rowH: 0.36 });
-    T(s, bullets(["每張照片判讀 3 次，取多數決", "整潔度意見不一致時，取較髒的等級", "角度不同、無法比對的照片送人工，不當作沒問題"]), { x: rx + 0.3, y: top + 3.12, w: rw - 0.6, h: 1.15, fontSize: 13.5, paraSpaceAfter: 4 });
+    ], { x: rx + 0.3, y: top + 0.95, w: rw - 0.6, colW: [1.75, rw - 0.6 - 1.75], fontFace: FONT, fontSize: 12.5, color: HEX.ink, fill: { color: HEX.white }, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [2, 8, 2, 8], rowH: 0.31 });
+    T(s, bullets(["每張照片判讀 3 次，取多數決；整潔度意見不一致時取較髒的等級", "角度不同、無法比對的照片送人工，不當作沒問題"]), { x: rx + 0.3, y: top + 2.62, w: rw - 0.6, h: 0.7, fontSize: 13, paraSpaceAfter: 3 });
 
-    box(s, MX, 6.2, CW, 0.55, { fill: { color: C.accent4 }, line: { color: C.accent4, width: 0 } });
-    T(s, [{ text: "設計原則：寧可多報，不要漏報。", options: { bold: true, color: C.accent1 } }, { text: "漏掉一台髒車或新車損的代價，高於多一次人工確認；標記率在試點時實測並調整門檻。" }], { x: MX + 0.25, y: 6.2, w: CW - 0.5, h: 0.55, fontSize: 13.5, valign: "middle" });
-    s.addNotes("手機端把關拍照、後台 AI 判讀車況。手機端要快，全部在瀏覽器內運算：畫質（清晰度、亮度、過曝，門檻用 1,200 張還車照片校準）；車牌（PaddleOCR 每 0.5 秒讀一次，整張車牌入鏡時 92% 讀對，從未認成別台車）；角度與遠近（比對上一張同角度照片的車牌位置與大小，站對的 95% 通過、站錯的 77% 被抓到）；光線（比上一張暗很多就提醒）。後台要準：自架 Qwen 系列視覺語言模型，看車身四角、車內、卡夾、核對用戶回報；每張判讀 3 次取多數決，整潔度意見不一取較髒，無法比對的送人工。");
+    // why these choices (was its own page in v2)
+    const reasons = [
+      ["FaEye", "為什麼用視覺語言模型", "不必先標註大量資料；一個模型看車損、整潔、遺留物、卡片"],
+      ["FaLock", "為什麼自架 Qwen 系列", "照片不外流；每天約 8.2 萬次判讀，不按次付費"],
+      ["FaMobileAlt", "為什麼檢查放在手機", "上傳後才檢查用戶已離開；在手機上即時回饋"],
+      ["FaIdCard", "為什麼用 PaddleOCR", "開源、約 15 MB，手機上每 0.5 秒辨識；畫面不上傳"],
+    ];
+    const kw = (CW - 0.6) / 4, ky = 5.18, kh = 1.02;
+    for (const [i, [ic, t, d]] of reasons.entries()) {
+      const x = MX + i * (kw + 0.2);
+      outline(s, x, ky, kw, kh);
+      await iconDot(s, ic, x + 0.15, ky + 0.14, 0.42);
+      T(s, t, { x: x + 0.65, y: ky + 0.12, w: kw - 0.75, h: 0.42, fontSize: 13, bold: true, valign: "middle" });
+      T(s, d, { x: x + 0.15, y: ky + 0.55, w: kw - 0.28, h: 0.44, fontSize: 11, color: C.text2 });
+    }
+    box(s, MX, 6.35, CW, 0.5, { fill: { color: C.accent4 }, line: { color: C.accent4, width: 0 } });
+    T(s, [{ text: "設計原則：寧可多報，不要漏報。", options: { bold: true, color: C.accent1 } }, { text: "漏掉一台髒車或新車損的代價，高於多一次人工確認；標記率在試點時實測並調整門檻。" }], { x: MX + 0.25, y: 6.35, w: CW - 0.5, h: 0.5, fontSize: 13, valign: "middle" });
+    s.addNotes("手機端把關拍照、後台 AI 判讀車況。手機端要快，全部在瀏覽器內運算：畫質（清晰度、亮度、過曝，門檻用 1,200 張還車照片校準）；車牌（PaddleOCR 每 0.5 秒讀一次，整張車牌入鏡時 92% 讀對，從未認成別台車）；角度與遠近（比對上一張同角度照片的車牌位置與大小，站對的 95% 通過、站錯的 77% 被抓到）；光線（比上一張暗很多就提醒）。後台要準：自架 Qwen 系列視覺語言模型，看車身四角、車內、卡夾、核對用戶回報；每張判讀 3 次取多數決，整潔度意見不一取較髒，無法比對的送人工。選用原因：VLM 不必先標註大量資料；自架讓照片不外流、每天約 8.2 萬次判讀不按次付費；檢查放手機才能在用戶離開前回饋；車牌用開源 PaddleOCR，約 15 MB，在手機上執行。");
   }
   {
     const s = content("4. AI 應用方法", "4　AI 應用方法｜實測結果", "主辦方 144 組照片：車損召回率 100%、誤報率 3%");
@@ -516,47 +520,92 @@ async function build() {
     s.addNotes("實測結果。用主辦方提供的 144 組取還車照片評估（24 組有索賠、120 組沒有），搭配拍照時的角度審核與光線判斷：有索賠的 24 組全部判為新車損，召回率 100%；沒有索賠的 120 組，誤報率 3%。右邊是實際判讀：白天左前、夜間左後的車損，三次判讀都一致；車內照片能分出乾淨與髒汙，並說出髒在哪裡。照片來自主辦方資料集，車牌已遮蔽。");
   }
   {
-    const s = content("4. AI 應用方法", "4　AI 應用方法｜選用原因與迭代", "選用原因：照片不外流、不按次付費，越用越準");
-    const reasons = [
-      ["FaEye", "為什麼用視覺語言模型", "不必先標註大量資料就能上線；\n一個模型同時看車損、整潔、遺留物與卡片，並寫出白話理由"],
-      ["FaLock", "為什麼選 Qwen 系列開源模型自架", "照片含車牌與車內影像，留在自己的環境；\n每天約 8.2 萬次判讀，不按次付費；可用 iRent 的資料微調"],
-      ["FaMobileAlt", "為什麼畫質檢查放在手機", "上傳後才檢查，用戶已經離開；\n在手機上運算即時回饋，也不佔伺服器資源"],
-      ["FaIdCard", "為什麼車牌辨識用 PaddleOCR", "開源、模型約 15 MB，在瀏覽器內每 0.5 秒執行；\n相機畫面不用上傳到伺服器"],
-    ];
-    const lw = 6.55;
-    for (const [i, [ic, t, d]] of reasons.entries()) {
-      const y = 1.62 + i * 1.18;
-      await iconDot(s, ic, MX, y + 0.05, 0.58);
-      T(s, [{ text: t, options: { bold: true, fontSize: 15, breakLine: true } }, { text: d, options: { fontSize: 12.5, color: C.text2 } }], { x: MX + 0.8, y, w: lw - 1.0, h: 1.08, paraSpaceAfter: 2 });
-    }
-    const rx = MX + lw + 0.4, rw = W - MX - rx;
-    T(s, "資料飛輪：營運每次確認，都是訓練資料", { x: rx, y: 1.6, w: rw, h: 0.32, fontSize: 15, bold: true });
-    const cx = rx + rw / 2, cy = 3.28, bw = 1.85, bh = 0.52;
-    const nodes = [
-      { t: "營運確認或駁回", x: cx - bw / 2, y: 2.08 },
-      { t: "收集成資料集", x: rx + rw - bw, y: cy - bh / 2 },
-      { t: "重新訓練模型", x: cx - bw / 2, y: 4.48 - bh },
-      { t: "更新上線", x: rx, y: cy - bh / 2 },
-    ];
-    nodes.forEach((n) => {
-      outline(s, n.x, n.y, bw, bh, { rectRadius: 0.08, line: { color: C.accent1, width: 1.25 } });
-      T(s, n.t, { x: n.x, y: n.y, w: bw, h: bh, fontSize: 13, bold: true, align: "center", valign: "middle" });
-    });
-    arrow(s, cx + bw / 2 + 0.05, 2.08 + bh / 2, rx + rw - bw / 2, cy - bh / 2 - 0.06);
-    arrow(s, rx + rw - bw / 2, cy + bh / 2 + 0.06, cx + bw / 2 + 0.05, 4.48 - bh / 2);
-    arrow(s, cx - bw / 2 - 0.05, 4.48 - bh / 2, rx + bw / 2, cy + bh / 2 + 0.06);
-    arrow(s, rx + bw / 2, cy - bh / 2 - 0.06, cx - bw / 2 - 0.05, 2.08 + bh / 2);
-    T(s, "反覆迭代", { x: cx - 0.8, y: cy - 0.22, w: 1.6, h: 0.44, fontSize: 15, bold: true, color: C.accent1, align: "center", valign: "middle" });
+    const s = content("4. AI 應用方法", "4　AI 應用方法｜導入後系統架構", "導入後架構：手機把關、自架 AI 判讀、營運閉環");
+    const done = (x, y) => tag(s, "原型已實作", x, y, 0.95, { fill: { color: C.accent5 } });
+    const head = (t, x, w) => T(s, t, { x, y: 1.5, w, h: 0.3, fontSize: 12, bold: true, color: C.text2, valign: "middle" });
+    const comp = (x, y, w, h, title, sub, o = {}) => {
+      if (o.dashed) outline(s, x, y, w, h, { rectRadius: 0.06, line: { color: C.accent2, width: 1, dashType: "dash" } });
+      else box(s, x, y, w, h, Object.assign({ rectRadius: 0.06 }, o.fill ? { fill: { color: o.fill }, line: { color: o.fill, width: 0 } } : {}));
+      const runs = [{ text: title, options: { bold: true, fontSize: o.size || 13, breakLine: !!sub } }];
+      if (sub) sub.forEach((t, i) => runs.push({ text: t, options: { fontSize: 10.5, color: t.startsWith("觸發器") ? C.accent1 : C.text2, breakLine: i < sub.length - 1 } }));
+      T(s, runs, { x: x + 0.12, y: y + 0.06, w: w - 0.24, h: h - 0.1, valign: "middle", paraSpaceAfter: 1 });
+    };
+    const flow = (x1, y1, x2, y2, label, ly) => {
+      arrow(s, x1, y1, x2, y2, { line: { color: C.accent1, width: 1.5, endArrowType: "triangle" } });
+      if (label) T(s, label, { x: Math.min(x1, x2) - 0.02, y: ly, w: Math.abs(x2 - x1) + 0.04, h: 0.36, fontSize: 9, color: C.accent1, bold: true, align: "center", valign: "bottom" });
+    };
+    const top = 1.85, hh = 3.2;
+    const A = { x: MX, w: 2.35 }, B = { x: 3.45, w: 1.85 }, Cc = { x: 5.8, w: 3.95 }, D = { x: 10.25, w: W - MX - 10.25 };
 
-    T(s, "演進路線", { x: rx, y: 4.72, w: rw, h: 0.3, fontSize: 13, bold: true });
-    const road = [["A", "VLM 先行", "上線並累積\n照片與確認結果"], ["B", "累積標註", "以營運確認、\n駁回的案例當標籤"], ["C", "自訓小模型", "小模型先篩、\nVLM 複核，\n延遲與成本更低"]];
-    const gw = (rw - 0.3) / 3;
-    road.forEach(([k, t, d], i) => {
-      const x = rx + i * (gw + 0.15);
-      box(s, x, 5.08, gw, 1.35);
-      T(s, [{ text: k + "｜" + t, options: { bold: true, fontSize: 13, color: C.accent1, breakLine: true } }, { text: d, options: { fontSize: 12, color: C.text2 } }], { x: x + 0.12, y: 5.18, w: gw - 0.24, h: 1.18, paraSpaceAfter: 3 });
+    // A: the phone
+    head("用戶手機", A.x, A.w);
+    box(s, A.x, top, A.w, hh);
+    done(A.x + A.w - 1.05, top + 0.1);
+    T(s, [{ text: "iRent App", options: { bold: true, fontSize: 15, breakLine: true } }, { text: "內嵌 iRent+ 拍照模組", options: { bold: true, fontSize: 11.5, color: C.accent1 } }], { x: A.x + 0.18, y: top + 0.42, w: A.w - 0.3, h: 0.62 });
+    T(s, bullets(["疊上次照片對齊", "畫質：清晰度、亮度", "車牌辨識（PaddleOCR）", "角度、遠近、光線"]), { x: A.x + 0.18, y: top + 1.1, w: A.w - 0.3, h: 1.15, fontSize: 11.5, paraSpaceAfter: 2 });
+    T(s, "全部在手機上運算，\n不合格當場重拍", { x: A.x + 0.18, y: top + 2.22, w: A.w - 0.3, h: 0.45, fontSize: 10.5, color: C.text2 });
+    comp(A.x + 0.15, top + 2.7, A.w - 0.3, 0.4, "取還車確認單", null, { fill: HEX.white, size: 11.5 });
+
+    // B: existing iRent systems
+    head("iRent 既有系統", B.x, B.w);
+    const ex = [["會員與訂單", "取還車事件"], ["計費", "按下還車即停止"], ["車機", "遠端開鎖、鎖門"], ["照片儲存", "原圖與縮圖"]];
+    ex.forEach(([t, d], i) => comp(B.x, top + i * 0.77, B.w, 0.62, t, [d], { dashed: true, size: 12 }));
+    T(s, "以 API／事件串接", { x: B.x, y: top + 3.04, w: B.w, h: 0.2, fontSize: 10, color: C.accent2, align: "center" });
+
+    // C: the new platform
+    head("iRent+ 平台（部署在 iRent 環境）", Cc.x, Cc.w);
+    outline(s, Cc.x, top, Cc.w, hh, { line: { color: C.accent1, width: 1.5 } });
+    done(Cc.x + Cc.w - 1.05, top + 0.1);
+    const cx = Cc.x + 0.15, cw = Cc.w - 0.6;
+    comp(cx, top + 0.42, cw, 0.88, "車況資料庫", ["取還車、判讀結果、預警、工單、已知車損", "觸發器：預警 → 工單 → 暫停出租"]);
+    comp(cx, top + 1.55, cw, 0.58, "判讀任務佇列", ["多台判讀服務不重複領取，失敗自動重試"]);
+    comp(cx, top + 2.38, cw, 0.72, "自架 GPU 判讀服務", ["Qwen 系列視覺語言模型（vLLM）", "比對車損、整潔遺留物、卡片；3 次多數決"]);
+    arrow(s, cx + 0.5, top + 1.32, cx + 0.5, top + 1.53, { line: { color: C.accent1, width: 1.5, endArrowType: "triangle" } });
+    arrow(s, cx + 0.5, top + 2.15, cx + 0.5, top + 2.36, { line: { color: C.accent1, width: 1.5, endArrowType: "triangle" } });
+    // results written back to the database
+    const bx = cx + cw + 0.17;
+    s.addShape(SH.LINE, { x: cx + cw, y: top + 2.74, w: bx - cx - cw, h: 0.001, line: { color: C.accent1, width: 1.5 } });
+    s.addShape(SH.LINE, { x: bx, y: top + 0.86, w: 0.001, h: 2.74 - 0.86, line: { color: C.accent1, width: 1.5 } });
+    arrow(s, bx, top + 0.86, cx + cw + 0.01, top + 0.86, { line: { color: C.accent1, width: 1.5, endArrowType: "triangle" } });
+    T(s, "寫回", { x: bx - 0.42, y: top + 1.78, w: 0.4, h: 0.24, fontSize: 9, bold: true, color: C.accent1, align: "right" });
+
+    // D: operations
+    head("營運端", D.x, D.w);
+    box(s, D.x, top, D.w, 1.95);
+    done(D.x + D.w - 1.05, top + 0.1);
+    T(s, "營運後台", { x: D.x + 0.15, y: top + 0.42, w: D.w - 0.3, h: 0.36, fontSize: 14, bold: true });
+    T(s, bullets(["預警：確認或駁回", "工單：清潔、檢修", "車輛與已知車損", "顧客評論分類"]), { x: D.x + 0.15, y: top + 0.8, w: D.w - 0.3, h: 1.1, fontSize: 11.5, paraSpaceAfter: 2 });
+    comp(D.x, top + 2.13, D.w, 0.72, "通知與派工", ["確認單推播給用戶；", "清潔、維修廠商派工"], { dashed: true, size: 12 });
+    T(s, "營運只需 1–2 人確認", { x: D.x, y: top + 2.93, w: D.w, h: 0.26, fontSize: 11, bold: true, color: C.accent1, align: "center" });
+
+    // flows between columns
+    flow(A.x + A.w + 0.03, top + 1.0, B.x - 0.03, top + 1.0, "照片\n上傳", top + 0.6);
+    flow(B.x + B.w + 0.03, top + 0.31, Cc.x - 0.03, top + 0.31, "送出\n事件", top - 0.08);
+    flow(Cc.x + Cc.w + 0.03, top + 0.62, D.x - 0.03, top + 0.62, "預警\n工單", top + 0.22);
+    flow(D.x - 0.03, top + 1.35, Cc.x + Cc.w + 0.03, top + 1.35, "確認\n駁回", top + 0.95);
+    flow(Cc.x + Cc.w + 0.03, top + 2.5, D.x - 0.03, top + 2.5, "派工\n通知", top + 2.1);
+    flow(B.x - 0.03, top + 2.9, A.x + A.w + 0.03, top + 2.9, "確認單", top + 2.5);
+    T(s, "每天約 8.2 萬次判讀、尖峰約 1.8 次／秒；判讀服務加機器即可擴充，照片不離開 iRent 環境", { x: Cc.x - 1.2, y: top + hh + 0.06, w: Cc.w + 2.4, h: 0.26, fontSize: 10, color: C.accent2, align: "center" });
+
+    // retraining loop
+    const ly = 5.55;
+    T(s, [{ text: "資料回訓迴圈", options: { bold: true, fontSize: 14, color: C.accent1, breakLine: true } }, { text: "營運判斷越多，模型越準", options: { fontSize: 11, color: C.text2 } }], { x: MX, y: ly, w: 2.3, h: 0.66, valign: "middle" });
+    const steps = ["營運確認／駁回", "累積標註資料", "重新訓練、微調", "離線評估\n召回率・誤報率", "影子模式驗證後\n更新判讀服務"];
+    const lx0 = 2.95, sw = 1.62, sg = (W - MX - lx0 - sw * 5) / 4;
+    steps.forEach((t, i) => {
+      const x = lx0 + i * (sw + sg);
+      outline(s, x, ly, sw, 0.66, { rectRadius: 0.08, line: { color: C.accent1, width: 1.25 } });
+      T(s, t, { x: x + 0.05, y: ly, w: sw - 0.1, h: 0.66, fontSize: 11.5, bold: true, align: "center", valign: "middle" });
+      if (i < 4) arrow(s, x + sw + 0.04, ly + 0.33, x + sw + sg - 0.04, ly + 0.33, { line: { color: C.accent1, width: 1.5, endArrowType: "triangle" } });
     });
-    s.addNotes("選用原因。VLM 不必先標註大量資料就能上線，一個模型同時處理車損、整潔、遺留物、卡片並寫出理由。自架 Qwen 系列開源模型：照片不外流、不按次付費（每天約 8.2 萬次判讀）、可用自己的資料微調。畫質檢查放手機是因為上傳後才檢查用戶已離開。車牌辨識用開源的 PaddleOCR，模型約 15 MB，在瀏覽器內每 0.5 秒執行，相機畫面不用上傳。營運每次確認或駁回都收集成資料集，重新訓練、更新上線，反覆迭代；長期由自訓小模型先篩、VLM 複核。");
+
+    // legend
+    const gy = 6.5;
+    done(MX, gy);
+    T(s, "原型已在跑：網頁版 App、Supabase、實驗室 GPU + vLLM、營運後台", { x: MX + 1.05, y: gy, w: 5.2, h: 0.26, fontSize: 10, color: C.text2, valign: "middle" });
+    outline(s, 6.95, gy + 0.02, 0.5, 0.22, { rectRadius: 0.04, line: { color: C.accent2, width: 1, dashType: "dash" } });
+    T(s, "導入時串接；並把網頁版換成 App 模組、資料庫與 GPU 移到 iRent 環境", { x: 7.55, y: gy, w: W - MX - 7.55, h: 0.26, fontSize: 10, color: C.text2, valign: "middle" });
+    s.addNotes("導入後的系統架構。用戶手機：iRent App 內嵌 iRent+ 拍照模組，疊影對齊、畫質、車牌 OCR、角度遠近與光線都在手機上運算，不合格當場重拍。iRent 既有系統：會員與訂單、計費（按下還車即停）、車機遠端開鎖鎖門、照片儲存，以 API 與事件串接。iRent+ 平台部署在 iRent 自己的環境：車況資料庫記錄取還車、判讀、預警、工單與已知車損，用資料庫觸發器自動開工單、暫停出租；判讀任務佇列讓多台判讀服務不重複領取、失敗自動重試；自架 GPU 判讀服務跑 Qwen 系列視覺語言模型（vLLM），每張照片判讀 3 次取多數決，結果寫回資料庫。營運端：營運後台處理預警的確認或駁回、工單、車輛與已知車損、顧客評論；通知與派工把確認單推給用戶、把清潔檢修派給廠商。容量：每天約 8.2 萬次判讀、尖峰約每秒 1.8 次，加機器即可擴充。營運每次確認或駁回都累積成標註資料，重新訓練、離線評估召回率與誤報率，影子模式驗證後更新判讀服務。綠色標籤是原型已經在跑的部分；虛線是導入時要串接的 iRent 既有系統。");
   }
 
   // ============================================================ 5 differentiation
@@ -570,7 +619,7 @@ async function build() {
       ["還車順序", "鎖門後才要拍車內", "先拍車內再鎖門，計費停在按下還車"],
       ["檢查方式", "靠人工查看，看不完也看得晚", "AI 每筆都看，人只確認 AI 標記的部分"],
       ["責任歸屬", "事後翻照片，說不清是誰造成", "取車比上次、還車比取車，差異歸到對的人"],
-      ["髒車處理", "下一位用戶取車才發現、客訴", "還車後自動排清潔、暫停出租"],
+      ["髒車與車損", "下一位用戶取車才發現、客訴", "髒車排清潔、嚴重車損先送修，都暫停出租"],
       ["用戶透明度", "看不到判定結果", "每次取還車都有確認單與營運確認狀態"],
     ];
     s.addTable([
@@ -633,9 +682,9 @@ async function build() {
     const s = content("6. 預期效益與落地評估", "6　預期效益與落地評估｜落地評估", "分四階段導入：先驗證、再試點、後擴大");
     const phases = [
       ["第 1–2 個月", "擴大驗證", "主辦方 144 組已完成；\n再用更多歷史照片與索賠紀錄\n確認召回率與誤報率"],
-      ["第 3–4 個月", "影子模式", "手機即時檢查先上線；\nAI 在背景判讀、與人工比對，\n不影響現有作業"],
-      ["第 5–6 個月", "區域試點", "選 1–2 個區域開啟自動工單、\n暫停出租與確認單，\n追蹤工時與客訴"],
-      ["第 7 個月起", "全面導入", "擴大到全車隊；\n每月以營運確認資料\n重新訓練模型"],
+      ["第 3–4 個月", "影子模式", "App 拍照模組先上線；\n判讀服務只寫預警、不派工，\n與人工結果比對"],
+      ["第 5–6 個月", "區域試點", "1–2 個區域開啟自動工單、\n暫停出租與確認單，串接\n派工與推播，追蹤工時與客訴"],
+      ["第 7 個月起", "全面導入", "GPU 依實測吞吐量擴充到\n全車隊；資料回訓迴圈\n每月重新訓練模型"],
     ];
     const gw = 0.3, pw = (CW - gw * 3) / 4;
     phases.forEach(([when, t, d], i) => {
@@ -652,7 +701,7 @@ async function build() {
     const L = (t) => ({ text: t, options: { bold: true, fill: { color: HEX.panel } } });
     s.addTable([
       [L("運算"), "GPU 伺服器自架 Qwen 系列模型；尖峰約每秒 1.8 次判讀。試點先用 1 台，實測吞吐量後再估全車隊台數與成本"],
-      [L("系統"), "App 拍照頁加入疊影、畫質與車牌檢查（模型約 15 MB）；後台串接預警與工單資料表"],
+      [L("系統"), "App 加入拍照模組（車牌模型約 15 MB）；車況資料庫與判讀佇列串接訂單、計費、車機與派工（架構見第 12 頁）"],
       [L("人力"), "營運確認 1–2 人；導入期需 App、後台與模型工程人力，上線後併入既有團隊維運"],
       [L("資料"), "歷史照片與索賠紀錄供驗證；照片留在內部環境"],
     ], { x: MX, y: 4.3, w: lw, colW: [0.95, lw - 0.95], fontFace: FONT, fontSize: 13, color: HEX.ink, valign: "middle", border: { type: "solid", pt: 0.75, color: HEX.line }, margin: [4, 8, 4, 8], rowH: [0.62, 0.62, 0.62, 0.5] });
@@ -660,13 +709,13 @@ async function build() {
     T(s, "上線後追蹤的指標", { x: rx, y: 3.9, w: rw, h: 0.32, fontSize: 15, bold: true });
     T(s, bullets(["照片當場重拍率、事後被要求重拍次數", "AI 標記率（目標 10% 以下）", "新車損召回率、誤報率", "髒車客訴與車損爭議客服件數", "預警到工單完成的時間", "營運每日檢視工時"]), { x: rx, y: 4.32, w: rw, h: 2.3, fontSize: 13.5, paraSpaceAfter: 5 });
     T(s, "尖峰推論量：16 時 2,144 張 × 每張 3 次 ÷ 3,600 秒 ≈ 1.8 次／秒", { x: MX, y: 6.72, w: CW, h: 0.24, fontSize: 10, color: C.accent2 });
-    s.addNotes("落地評估。四階段：第 1–2 個月擴大驗證（主辦方 144 組已完成，召回率 100%、誤報率 3%，再用更多歷史照片確認）；第 3–4 個月影子模式，手機即時檢查先上線、AI 在背景判讀與人工比對；第 5–6 個月區域試點，開啟自動工單、暫停出租與確認單；第 7 個月起全面導入，每月以營運確認資料重新訓練。資源：GPU 伺服器自架模型（尖峰約每秒 1.8 次判讀，試點先 1 台）、App 拍照頁（車牌模型約 15 MB）與後台串接、營運確認 1–2 人；導入期需要工程人力，上線後併入既有團隊維運。");
+    s.addNotes("落地評估。四階段：第 1–2 個月擴大驗證（主辦方 144 組已完成，召回率 100%、誤報率 3%，再用更多歷史照片確認）；第 3–4 個月影子模式，App 拍照模組先上線，判讀服務只寫預警、不派工，與人工結果比對；第 5–6 個月區域試點，開啟自動工單、暫停出租與確認單，串接派工與推播；第 7 個月起依實測吞吐量擴充 GPU 到全車隊，資料回訓迴圈每月重新訓練。資源：GPU 伺服器自架模型（尖峰約每秒 1.8 次判讀，試點先 1 台）、App 拍照頁（車牌模型約 15 MB）與後台串接、營運確認 1–2 人；導入期需要工程人力，上線後併入既有團隊維運。");
   }
 
   // ============================================================ 7 references
   pres.addSection({ title: "7. 補充資料" });
   {
-    const s = content("7. 補充資料", "7　補充資料", "資料來源、程式碼與概念原型");
+    const s = content("7. 補充資料", "7　補充資料", "資料來源、程式碼與原型畫面");
     const lw = 5.95;
     T(s, "資料來源", { x: MX, y: 1.6, w: lw, h: 0.3, fontSize: 14, bold: true });
     T(s, bullets([
@@ -692,14 +741,15 @@ async function build() {
     });
 
     const px = mx + mw + 0.2, pwid = W - MX - px;
-    T(s, "概念原型", { x: px, y: 1.6, w: pwid, h: 0.3, fontSize: 14, bold: true });
-    const aw = pwid, ah = aw * 1560 / 2260;
-    s.addImage({ path: path.join(IMG, "admin_crop.png"), altText: "營運後台預警頁示意", x: px, y: 2.0, w: aw, h: ah });
-    s.addShape(SH.RECTANGLE, { x: px, y: 2.0, w: aw, h: ah, fill: { type: "none" }, line: { color: C.accent3, width: 1 } });
-    T(s, "網頁模擬 App 與營運後台，\n實機操作見 3 分鐘說明影片", { x: px, y: 2.1 + ah, w: pwid, h: 0.6, fontSize: 11, color: C.text2 });
+    T(s, "原型實機畫面", { x: px, y: 1.6, w: pwid, h: 0.3, fontSize: 14, bold: true });
+    const aw = pwid, ah = aw * 785 / 1102;
+    shot(s, "d_alerts.png", px, 2.0, aw, ah, "營運後台預警頁實機截圖");
+    const mw2 = (pwid - 0.15) / 2, mh2 = mw2 * 1512 / 790;
+    shot(s, "s_home.png", px, 2.15 + ah, mw2, Math.min(mh2, 5.95 - 2.15 - ah), "手機 App 選擇車輛頁實機截圖，整備中的車不能借");
+    shot(s, "s_receipt_return.png", px + mw2 + 0.15, 2.15 + ah, mw2, Math.min(mh2, 5.95 - 2.15 - ah), "手機 App 還車確認單實機截圖");
     box(s, MX, 6.15, CW, 0.6, { fill: { color: C.accent4 }, line: { color: C.accent4, width: 0 } });
     T(s, [{ text: "iRent+", options: { bold: true, color: C.accent1 } }, { text: "　利用 AI，打造全台最好的租車平台", options: { bold: true } }], { x: MX + 0.3, y: 6.15, w: CW - 0.6, h: 0.6, fontSize: 18, valign: "middle" });
-    s.addNotes("補充資料：資料來源、GitHub 程式碼（github.com/Allenwang2004/irent，README 有給評審的說明）與概念原型。程式碼：mobile 手機 App、web 營運後台、worker VLM 檢查服務、eval 評估腳本、supabase 資料表與自動工單。");
+    s.addNotes("補充資料：資料來源、GitHub 程式碼（github.com/Allenwang2004/irent，README 有給評審的說明）與概念原型。程式碼：mobile 手機 App、web 營運後台、worker VLM 檢查服務、eval 評估腳本、supabase 資料表與自動工單。右邊是原型的實機畫面：營運後台預警頁、手機選擇車輛頁（整備中的車不能借）與還車確認單。");
   }
 
   await pres.writeFile({ fileName: OUT });

@@ -1,21 +1,30 @@
 // Mock screens of the phone web app (mobile/), drawn from its real copy and
 // layout, used until screen recordings are dropped into public/demo/.
 import React from "react";
-import { interpolate } from "remotion";
+import { Img, interpolate, staticFile } from "remotion";
 import { CarPhoto, CarShape, CornerGuide, Garage } from "../components/CarArt";
 import { clamp, ramp, Tap } from "../components/Common";
 import { Viewfinder } from "../components/Viewfinder";
 import { DEMO_UI as U } from "../copy";
+import { REAL_CAR } from "./realCar";
 import { C, FONT } from "../theme";
 
 const M = { accent: "#c8102e", surface2: "#ececea", line: "#e0dfda", ink: "#111111", ink2: "#55544f", ink3: "#85847e", good: "#0ca30c", warning: "#fab219", critical: "#d03b3b" };
 
-const Screen: React.FC<{ children: React.ReactNode; dark?: boolean }> = ({ children, dark }) => (
-  <div style={{ position: "absolute", inset: 0, background: dark ? "#0d0d0d" : "#fff", fontFamily: FONT, color: dark ? "#fff" : M.ink }}>
+// Clock and battery. Also drawn over the real screen recordings, whose own status
+// bar is cropped off (time, recording dot, "back to app" link).
+export const StatusBar: React.FC<{ dark?: boolean }> = ({ dark }) => (
+  <div style={{ position: "absolute", inset: 0, fontFamily: FONT, color: dark ? "#fff" : M.ink, pointerEvents: "none" }}>
     <div style={{ position: "absolute", top: 16, left: 30, fontSize: 16, fontWeight: 700 }}>9:41</div>
     <div style={{ position: "absolute", top: 18, right: 28, display: "flex", gap: 6 }}>
       <div style={{ width: 18, height: 11, borderRadius: 2, border: `1.5px solid ${dark ? "#fff" : M.ink}` }} />
     </div>
+  </div>
+);
+
+const Screen: React.FC<{ children: React.ReactNode; dark?: boolean }> = ({ children, dark }) => (
+  <div style={{ position: "absolute", inset: 0, background: dark ? "#0d0d0d" : "#fff", fontFamily: FONT, color: dark ? "#fff" : M.ink }}>
+    <StatusBar dark={dark} />
     {children}
   </div>
 );
@@ -135,7 +144,26 @@ export type CamTimes = {
 
 const VF = { x: 16, y: 132, w: 358, h: 477 };
 
-export const CameraScreen: React.FC<{ t: number; times: CamTimes }> = ({ t, times: k }) => {
+// Real car (tools/demo/real_car.py): live = current video frame; the overlay is the
+// previous photo lined up with the aligned frame, plus that car's outline.
+// Normal framing is REAL_CAR.zoom; "too far" zooms out to REAL_CAR.zoomFar so the car looks
+// smaller (below 1, the edges show a blurred copy of the same frame).
+const REAL_ZOOM = REAL_CAR.zoom;
+const REAL_ORIGIN = `${REAL_CAR.origin[0] * 100}% ${REAL_CAR.origin[1] * 100}%`;
+const RealView: React.FC<{ src: string; zoom: number }> = ({ src, zoom }) => (
+  <>
+    {zoom < 1 && <Img src={src} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", filter: "blur(10px)", transform: "scale(1.05)" }} />}
+    <Img src={src} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", transform: `scale(${zoom})`, transformOrigin: REAL_ORIGIN }} />
+  </>
+);
+const realFrame = (i: number) => staticFile(`real/live/f${String(Math.max(0, Math.min(REAL_CAR.frames - 1, i))).padStart(3, "0")}.jpg`);
+export const realFrameAt = (v: number) => realFrame(Math.round(v * REAL_CAR.fps));
+
+// The previous photo's plate, as a dashed box like the app's guide ("車牌").
+const plateBox = `M${REAL_CAR.plate.replace(/ /g, " L")} Z`;
+const [labelX, labelY] = REAL_CAR.plateLabel;
+
+export const CameraScreen: React.FC<{ t: number; times: CamTimes; live?: string }> = ({ t, times: k, live: liveSrc }) => {
   const align = interpolate(t, [k.alignFrom, k.alignTo], [0, 1], { ...clamp, easing: (x) => 1 - Math.pow(1 - x, 3) });
   const blur = Math.max(0, Math.min(ramp(t, k.blurFrom, 0.25), 1 - ramp(t, k.blurTo, 0.3)));
   const shake = blur * Math.sin(t * 38) * 6;
@@ -171,20 +199,45 @@ export const CameraScreen: React.FC<{ t: number; times: CamTimes }> = ({ t, time
       {/* viewfinder */}
       <div style={{ position: "absolute", left: VF.x, top: VF.y, width: VF.w, height: VF.h, borderRadius: 10, overflow: "hidden", background: "#1d1d1c" }}>
         <div style={{ position: "absolute", inset: 0, filter: `blur(${blur * 5}px)`, transform: `translateX(${shake}px)` }}>
-          <svg width={VF.w} height={VF.h} viewBox="0 0 300 400">
-            <Garage />
-            <g transform={`translate(${live.x} ${live.y}) rotate(${live.r} 150 250) scale(${live.s})`} style={{ transformOrigin: "150px 250px" }}>
-              <CarShape />
-            </g>
-          </svg>
+          {liveSrc ? (
+            <RealView src={liveSrc} zoom={REAL_ZOOM - (REAL_ZOOM - REAL_CAR.zoomFar) * far} />
+          ) : (
+            <svg width={VF.w} height={VF.h} viewBox="0 0 300 400">
+              <Garage />
+              <g transform={`translate(${live.x} ${live.y}) rotate(${live.r} 150 250) scale(${live.s})`} style={{ transformOrigin: "150px 250px" }}>
+                <CarShape />
+              </g>
+            </svg>
+          )}
         </div>
         {/* previous photo, 40% */}
-        {!captured && !captured2 && (
+        {!captured && !captured2 && liveSrc && (
+          <div style={{ position: "absolute", inset: 0, opacity: 1 - dark }}>
+            <div style={{ position: "absolute", inset: 0, opacity: 0.38 }}>
+              <RealView src={staticFile("real/ref.jpg")} zoom={REAL_ZOOM} />
+            </div>
+            {/* the previous photo's car outline */}
+            <svg width={VF.w} height={VF.h} viewBox="0 0 1080 1440" preserveAspectRatio="xMidYMid slice" style={{ position: "absolute", inset: 0, transform: `scale(${REAL_ZOOM})`, transformOrigin: REAL_ORIGIN, overflow: "visible" }}>
+              {[REAL_CAR.outline, plateBox].map((d) => (
+                <React.Fragment key={d}>
+                  <path d={d} fill="none" stroke="rgba(0,0,0,0.35)" strokeWidth={14} strokeLinejoin="round" />
+                  <path d={d} fill="none" stroke="#ffffff" strokeWidth={7} strokeLinejoin="round" strokeDasharray="26 14" />
+                </React.Fragment>
+              ))}
+              <rect x={labelX - 52} y={labelY - 78} width={104} height={52} rx={10} fill="rgba(0,0,0,0.55)" />
+              <text x={labelX} y={labelY - 42} textAnchor="middle" fontSize={31} fill="#fff" fontFamily={FONT}>
+                {U.plateLabel}
+              </text>
+            </svg>
+          </div>
+        )}
+        {!captured && !captured2 && !liveSrc && (
           <svg width={VF.w} height={VF.h} viewBox="0 0 300 400" style={{ position: "absolute", inset: 0, opacity: 0.38 * (1 - dark) }}>
             <CarShape color="#ffffff" />
           </svg>
         )}
-        {!captured && !captured2 && (
+        {/* the app's generic guide is only used with the drawn car; the real car gets its own outline above */}
+        {!captured && !captured2 && !liveSrc && (
           <svg width={VF.w} height={VF.h} viewBox="0 0 300 400" style={{ position: "absolute", inset: 0 }}>
             <CornerGuide />
           </svg>
@@ -267,8 +320,8 @@ export const ReturnStart: React.FC<{ t: number; times: ReturnTimes }> = ({ t, ti
       <Screen>
         <div style={{ position: "absolute", top: 70, left: 18, fontSize: 26, fontWeight: 700 }}>{U.inUseTitle}</div>
         <div style={{ position: "absolute", top: 112, left: 18, fontSize: 16, color: M.ink2 }}>{U.inUseSub}</div>
-        <div style={{ position: "absolute", top: 160, left: 18, right: 18, height: 220, borderRadius: 14, overflow: "hidden", background: M.surface2 }}>
-          <CarPhoto width={354} height={220} />
+        <div style={{ position: "absolute", top: 160, left: 18, right: 18, height: 330, borderRadius: 14, overflow: "hidden", background: M.surface2 }}>
+          <Img src={staticFile("real/car_wide.jpg")} style={{ width: 354, height: 330, objectFit: "cover", display: "block" }} />
         </div>
         <Button y={752} label={U.startReturn} pressed={pressed} />
         <Tap x={195} y={778} at={k.tapAt} t={t} />
@@ -321,7 +374,7 @@ export const ReturnStart: React.FC<{ t: number; times: ReturnTimes }> = ({ t, ti
         <div style={{ position: "absolute", top: 70, left: 18, fontSize: 26, fontWeight: 700 }}>{U.exteriorTitle}</div>
         <div style={{ position: "absolute", top: 72, right: 18, fontSize: 16, fontWeight: 700, color: M.good, border: `1.5px solid ${M.good}`, borderRadius: 999, padding: "4px 12px" }}>{U.locked}</div>
         {U.exteriorShots.map((s, i) => (
-          <ShotRow key={s} y={130 + i * 66} label={s} on={ramp(t, k.exteriorAt + 0.35 + i * 0.28, 0.15)} thumb={i < 4 ? <CarPhoto width={46} height={46} mirror={i % 2 === 1} /> : <div style={{ width: 46, height: 46, background: "#8a8a86" }} />} />
+          <ShotRow key={s} y={130 + i * 66} label={s} on={ramp(t, k.exteriorAt + 0.35 + i * 0.28, 0.15)} thumb={i < 4 ? <Img src={staticFile("real/car_square.jpg")} style={{ width: 46, height: 46, objectFit: "cover", display: "block", transform: i % 2 === 1 ? "scaleX(-1)" : undefined }} /> : <div style={{ width: 46, height: 46, background: "#8a8a86" }} />} />
         ))}
       </div>
     </Screen>

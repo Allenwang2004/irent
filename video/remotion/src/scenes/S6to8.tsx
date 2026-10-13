@@ -109,12 +109,12 @@ export const S7Benefit: React.FC = () => {
   const c = S7_CUES;
   // "導入後，人只需要透過我們建立的營運後台確認 AI 標記的部分": today's 10–20 people
   const peopleAt = c.s7_1.into(0.6);
-  // "以一成估算，每天要看的從 4,800 筆降到約 480 筆"
-  const b = [ramp(t, c.s7_2.at - 0.1), ramp(t, c.s7_2.into(0.45)), ramp(t, c.s7_2.into(3.5)), ramp(t, c.s7_2.end - 0.1)];
-  // "10 到 20 人的工作量降到 1 到 2 人，一年估計省下 540 到 1,080 萬元人事成本"
-  const cut = ramp(t, c.s7_3.into(1.5), 0.6);
-  const oneK = useSpringAt(c.s7_3.into(1.9));
-  const costK = useSpringAt(c.s7_3.into(3.0));
+  // the sum comes in on "…確認 AI 標記的部分" / "以一成估算，工作量降到 1 到 2 人"
+  const b = [ramp(t, c.s7_1.into(3.2)), ramp(t, c.s7_1.into(3.75)), ramp(t, c.s7_2.into(0.2)), ramp(t, c.s7_2.into(0.75))];
+  const cut = ramp(t, c.s7_2.into(1.3), 0.6);
+  const oneK = useSpringAt(c.s7_2.into(2.0));
+  // "一年估計省下 540 到 1,080 萬元人事成本"
+  const costK = useSpringAt(c.s7_3.into(0.8));
   // "用戶不用一直重拍，不會接到髒車，車損也說得清"
   const userK = ramp(t, c.s7_4.at - 0.1, 0.45);
   const beforeK = ramp(t, 0.1, 0.4);
@@ -163,14 +163,14 @@ export const S7Benefit: React.FC = () => {
       <div style={{ position: "absolute", top: 704, width: "100%", textAlign: "center", opacity: userK, transform: `translateY(${(1 - userK) * 16}px)` }}>
         <span style={{ fontSize: 36, fontWeight: 700, color: C.ink, background: C.panel, borderRadius: 999, padding: "12px 36px" }}>{S7.userLine}</span>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: 796, textAlign: "center", fontSize: 22, lineHeight: 1.5, color: C.ink3, opacity: ramp(t, c.s7_2.at, 0.4) }}>
+      <div style={{ position: "absolute", left: 0, right: 0, top: 796, textAlign: "center", fontSize: 22, lineHeight: 1.5, color: C.ink3, opacity: ramp(t, c.s7_1.into(3.2), 0.4) }}>
         {S7.assumption.map((l) => (
           <div key={l}>{l}</div>
         ))}
       </div>
       <Narration cues={c} />
-      <Sfx at={c.s7_3.into(1.9)} name="ding" volume={0.4} />
-      <Sfx at={c.s7_3.into(3.0)} name="pop" volume={0.4} />
+      <Sfx at={c.s7_2.into(2.0)} name="ding" volume={0.4} />
+      <Sfx at={c.s7_3.into(0.8)} name="pop" volume={0.4} />
     </AbsoluteFill>
   );
 };

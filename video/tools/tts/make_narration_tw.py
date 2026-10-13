@@ -88,6 +88,16 @@ def spoken(line: dict) -> str:
 
 async def edge_tts_bytes(text: str, voice: str, rate: str) -> bytes:
     import edge_tts
+    import edge_tts.communicate
+    from edge_tts.constants import TRUSTED_CLIENT_TOKEN
+
+    # Microsoft moved synthesis to a new host in October 2026; the old one
+    # (speech.platform.bing.com, still used by edge-tts 7.2.8) answers 403.
+    # See github.com/rany2/edge-tts/issues/490. Remove once edge-tts is fixed.
+    edge_tts.communicate.WSS_URL = (
+        "wss://api.msedgeservices.com/tts/cognitiveservices/websocket/v1"
+        f"?Ocp-Apim-Subscription-Key={TRUSTED_CLIENT_TOKEN}"
+    )
 
     buf = bytearray()
     async for chunk in edge_tts.Communicate(text, voice, rate=rate).stream():

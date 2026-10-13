@@ -2,9 +2,9 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import { CarPhoto } from "../components/CarArt";
-import { demoMarked, DemoTag, MechChip, mockLabel, Narration, PhoneFrame, ramp, RecordingOr, sceneOpacity, Sfx, StepBar, useSpringAt, useT, PHONE } from "../components/Common";
+import { MechChip, Narration, PhoneFrame, ramp, sceneOpacity, Sfx, StepBar, useSpringAt, useT } from "../components/Common";
 import { Viewfinder } from "../components/Viewfinder";
-import { DEMO_SHOTS, DEMO_UI as U, ORDERS, S5_PANELS as P, WORKER as W } from "../copy";
+import { DEMO_UI as U, ORDERS, S5_PANELS as P, WORKER as W } from "../copy";
 import { VehicleList } from "../mock/Mobile";
 import { S5D_CUES, S5D_LEN, S5E_CUES, S5E_LEN } from "../timeline";
 import { C, FONT } from "../theme";
@@ -162,7 +162,6 @@ export const S5dWorker: React.FC = () => {
 // ---------------------------------------------------------------- 5e work orders
 const COLS = [560, 300, 260];
 const ROW_H = 96;
-const FILE_E = DEMO_SHOTS.e.file;
 
 export const S5eOrders: React.FC = () => {
   const t = useT();
@@ -234,14 +233,12 @@ export const S5eOrders: React.FC = () => {
       </div>
       {/* the renter's car list */}
       <div style={{ opacity: phoneK, transform: `translateX(${(1 - phoneK) * 60}px)` }}>
-        <PhoneFrame x={1410} y={128} scale={0.86} label={mockLabel(FILE_E)} marked={demoMarked("e")}>
-          <RecordingOr file={FILE_E} width={PHONE.w} height={PHONE.h}>
-            <VehicleList t={t} pauseAt={pauseAt} />
-          </RecordingOr>
+        {/* animated phone screen (no screen recording for this one) */}
+        <PhoneFrame x={1410} y={128} scale={0.86}>
+          <VehicleList t={t} pauseAt={pauseAt} />
         </PhoneFrame>
       </div>
 
-      <DemoTag id="e" style={{ right: 540, top: 128 }} />
       <Narration cues={c} />
       {rowAt.slice(0, 3).map((a, i) => (
         <Sfx key={i} at={a} name="pop" volume={0.4} />

@@ -1,12 +1,13 @@
 import React from "react";
-import { AbsoluteFill, interpolate } from "remotion";
-import { clamp, DashedMark, demoMarked, DemoNote, DemoTag, easeInOut, hasRecording, MechChip, mockLabel, Narration, PHONE, PhoneFrame, ramp, RecordingOr, sceneOpacity, SidePanel, Sfx, StepBar, useT } from "../components/Common";
+import { AbsoluteFill, interpolate, OffthreadVideo, Sequence, staticFile } from "remotion";
+import { clamp, DashedMark, demoMarked, DemoNote, DemoTag, easeInOut, hasRecording, MechChip, mockLabel, Narration, PHONE, PhoneFrame, ramp, RecordingOr, sceneOpacity, SidePanel, Sfx, StepBar, Tap, useT } from "../components/Common";
 import { BrowserFrame } from "../components/DemoSlot";
 import { DEMO_SHOTS, DEMO_UI as U, S5_PANELS as P, type DemoShotId } from "../copy";
 import { ADMIN, AdminCases } from "../mock/Admin";
-import { CameraScreen, HistoryScreen, PickupDamages, PickupIntro, ReceiptScreen, ReturnStart } from "../mock/Mobile";
+import { CameraScreen, HistoryScreen, PickupDamages, PickupIntro, ReceiptScreen, realFrameAt, ReturnStart, StatusBar } from "../mock/Mobile";
+import { REAL_CAR } from "../mock/realCar";
 import { S5A_CUES, S5A_LEN, S5B_CUES, S5B_LEN, S5C_CUES, S5C_LEN, S5F_CUES, S5F_LEN, S5G_CUES, S5G_LEN } from "../timeline";
-import { C, FONT } from "../theme";
+import { C, f as fr, FONT } from "../theme";
 
 // Screen recordings: drop files with these names into public/demo/ and render again.
 // (file names are listed in copy.ts DEMO_SHOTS)
@@ -22,14 +23,22 @@ const PHONE_X = 300;
 const PHONE_Y = 46;
 
 // startFrom: seconds to skip at the start of the recording.
+// A real recording gets the same status bar as the mock screens, and its taps marked.
 const Phone: React.FC<{ id: DemoShotId; startFrom?: number; children: React.ReactNode }> = ({ id, startFrom = 0, children }) => {
-  const file = DEMO_SHOTS[id].file;
+  const t = useT();
+  const shot = DEMO_SHOTS[id];
+  const file = shot.file;
+  const rec = hasRecording(file);
+  const from = shot.from ?? startFrom;
+  const rate = shot.rate ?? 1;
   return (
     <>
       <PhoneFrame x={PHONE_X} y={PHONE_Y} scale={1.04} label={mockLabel(file)} marked={demoMarked(id)}>
         <RecordingOr file={file} width={PHONE.w} height={PHONE.h} startFrom={startFrom}>
           {children}
         </RecordingOr>
+        {rec && <StatusBar />}
+        {rec && (shot.taps ?? []).map((p, i) => <Tap key={i} x={p.x} y={p.y} at={(p.at - from) / rate} t={t} />)}
       </PhoneFrame>
       <DemoNote id={id} x={34} y={250} />
     </>
@@ -92,11 +101,19 @@ export const S5bCamera: React.FC = () => {
     darkShootAt: 999,
     failAt: 999,
   };
+  // The real video: walking from an odd angle up to the previous photo's framing
+  // (same easing as the "aligned" hint), then a little hand movement.
+  const A = REAL_CAR.aligned / REAL_CAR.fps;
+  const liveAt = (tt: number) => {
+    if (tt < times.alignFrom) return 0;
+    if (tt < times.alignTo) return A * (1 - Math.pow(1 - (tt - times.alignFrom) / (times.alignTo - times.alignFrom), 3));
+    return A + 0.12 * Math.sin(((tt - times.alignTo) / 3) * 2 * Math.PI);
+  };
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: sceneOpacity(t, S5B_LEN) }}>
       <StepBar active={P.b.step} />
       <Phone id="b">
-        <CameraScreen t={t} times={times} />
+        <CameraScreen t={t} times={times} live={realFrameAt(liveAt(Math.min(t, times.shootAt)))} />
       </Phone>
       <SidePanel mech={P.b.mech} chip={P.b.chip} title={P.b.title} points={P.b.points} t={t} at={0.15} />
       {/* "不用等事後通知補拍，用戶拍完就能離開" */}
@@ -177,6 +194,47 @@ const Callout: React.FC<{ k: number; y: number; children: React.ReactNode }> = (
   </div>
 );
 
+// The S5f recording (tools/demo/cut_demos.py) has a still stretch between the two
+// clicks: the confirmed card is gone at 6.4 s, the cursor starts for 駁回 at 11.27 s
+// and the card is replaced at 12.7 s. That stretch is played slower or faster so the
+// 駁回 click always lands on the narration, whatever the line lengths.
+const REC_F = { stillFrom: 6.6, stillTo: 11.2, dismissClick: 12.7 };
+const SplitRecording: React.FC<{ file: string; width: number; height: number; resumeAt: number; children: React.ReactNode }> = ({ file, width, height, resumeAt, children }) => {
+  if (!hasRecording(file)) return <>{children}</>;
+  const src = staticFile(file);
+  const style: React.CSSProperties = { width, height, objectFit: "cover", display: "block" };
+  const a = fr(REC_F.stillFrom);
+  const b = Math.max(a + 1, fr(resumeAt));
+  const rate = (REC_F.stillTo - REC_F.stillFrom) / ((b - a) / 30);
+  return (
+    <div style={{ position: "relative", width, height }}>
+      <Sequence durationInFrames={a}>
+        <OffthreadVideo src={src} muted style={style} />
+      </Sequence>
+      <Sequence from={a} durationInFrames={b - a}>
+        <OffthreadVideo src={src} muted startFrom={a} playbackRate={rate} style={style} />
+      </Sequence>
+      <Sequence from={b}>
+        <OffthreadVideo src={src} muted startFrom={fr(REC_F.stillTo)} style={style} />
+      </Sequence>
+    </div>
+  );
+};
+
+// "確認是新車損，需要立即維修就先送修，小損傷就恢復出租並記進車損紀錄，下一位取車就看得到"
+const Branch: React.FC<{ k: number; on: number; pill: string; pillBg: string; act: string; note: string; eg?: string; note2?: string; k2?: number }> = ({ k, on, pill, pillBg, act, note, eg, note2, k2 = 0 }) => (
+  <div style={{ marginTop: 16, padding: "12px 14px", borderRadius: 14, background: `rgba(215,0,15,${0.06 * on})`, borderLeft: `5px solid ${on > 0.5 ? C.red : "#e3e3e0"}`, opacity: k, transform: `translateY(${(1 - k) * 12}px)` }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+      <span style={{ fontSize: 18, fontWeight: 700, color: "#fff", background: pillBg, borderRadius: 999, padding: "3px 12px", whiteSpace: "nowrap" }}>{pill}</span>
+      <span style={{ fontSize: 22, color: C.ink3 }}>→</span>
+      <span style={{ fontSize: 26, fontWeight: 900, color: C.ink, whiteSpace: "nowrap" }}>{act}</span>
+    </div>
+    <div style={{ fontSize: 19, color: C.ink2, marginTop: 8, lineHeight: 1.5 }}>{note}</div>
+    {eg && <div style={{ fontSize: 17, color: C.ink3, marginTop: 4, lineHeight: 1.5 }}>{eg}</div>}
+    {note2 && <div style={{ fontSize: 19, fontWeight: 700, color: C.red, marginTop: 4, lineHeight: 1.5, opacity: k2 }}>{note2}</div>}
+  </div>
+);
+
 export const S5fCases: React.FC = () => {
   const t = useT();
   const c = S5F_CUES;
@@ -184,15 +242,23 @@ export const S5fCases: React.FC = () => {
     // "營運人員只需要看 AI 標記的案件，最嚴重的問題排在最前面"
     badgeAt: c.s5f_1.into(0.6),
     sortAt: c.s5f_1.into(2.7),
-    // "確認是新車損，就會記進這台車的紀錄，下一位取車時就會看到" / "如果檢查發現是誤報，按下駁回，車輛馬上恢復出租"
+    // "確認是新車損，需要立即維修就先送修，…" / "如果檢查發現是誤報，按下駁回，車輛馬上恢復出租"
     confirmAt: c.s5f_2.into(0.7),
     scrollAt: c.s5f_3.at,
     dismissAt: c.s5f_3.into(1.95),
   };
   const k = ramp(t, 0.05, 0.5);
-  const nextK = Math.min(ramp(t, c.s5f_2.into(1.4), 0.4), 1 - ramp(t, times.scrollAt, 0.3));
+  const out = 1 - ramp(t, times.scrollAt, 0.3);
+  const boxK = Math.min(ramp(t, c.s5f_2.into(1.0), 0.4), out);
+  const repairAt = c.s5f_2.into(1.35); // 需要立即維修就先送修
+  const minorAt = c.s5f_2.into(3.35); // 小損傷就恢復出租並記進車損紀錄
+  const nextAt = c.s5f_2.into(6.15); // 下一位取車就看得到
+  const repairK = ramp(t, repairAt, 0.35);
+  const minorK = ramp(t, minorAt, 0.35);
+  const nextK = ramp(t, nextAt, 0.35);
   const freeK = ramp(t, times.dismissAt + 0.6, 0.4);
   const label = mockLabel(DEMO_FILES.f);
+  const rec = hasRecording(DEMO_FILES.f); // callouts name the cars in the real recording
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: sceneOpacity(t, S5F_LEN), fontFamily: FONT }}>
       <div style={{ position: "absolute", left: 210, top: 28 }}>
@@ -204,26 +270,20 @@ export const S5fCases: React.FC = () => {
       <div style={{ position: "absolute", left: 210, top: 100, opacity: k, transform: `translateY(${(1 - k) * 30}px)` }}>
         {demoMarked("f") && <DashedMark inset={-14} radius={30} />}
         <BrowserFrame url={U.adminUrl} width={ADMIN.w}>
-          <RecordingOr file={DEMO_FILES.f} width={ADMIN.w} height={ADMIN.h}>
+          <SplitRecording file={DEMO_FILES.f} width={ADMIN.w} height={ADMIN.h} resumeAt={times.dismissAt - (REC_F.dismissClick - REC_F.stillTo)}>
             <AdminCases t={t} times={times} />
-          </RecordingOr>
+          </SplitRecording>
         </BrowserFrame>
       </div>
-      {/* next renter sees the confirmed damage */}
-      <Callout k={nextK} y={300}>
-        <div style={{ fontSize: 22, fontWeight: 700, color: C.red }}>{U.calloutNext}</div>
-        <div style={{ fontSize: 24, fontWeight: 700, color: C.ink, marginTop: 10 }}>{U.knownTitle(2)}</div>
-        <div style={{ fontSize: 22, color: C.ink2, marginTop: 8, lineHeight: 1.6 }}>
-          <div>{U.knownOld}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {U.knownNew}
-            <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", background: C.red, borderRadius: 999, padding: "1px 10px" }}>{U.newBadge}</span>
-          </div>
-        </div>
+      {/* confirmed new damage: repair first if it can't wait, otherwise rent again and record it */}
+      <Callout k={boxK} y={rec ? 250 : 230}>
+        <div style={{ fontSize: 24, fontWeight: 900, color: C.red }}>{U.branchTitle}</div>
+        <Branch k={repairK} on={repairK * (1 - minorK)} pill={U.branchRepair} pillBg={C.red} act={U.branchRepairDo} note={U.branchRepairNote} eg={rec ? `${U.branchEg}${U.recNextCar} ${U.recNewDamage}` : undefined} />
+        <Branch k={minorK} on={minorK} pill={U.branchMinor} pillBg="#8a8a86" act={U.branchMinorDo} note={U.branchMinorNote} note2={U.branchNext} k2={nextK} />
       </Callout>
       {/* dismissed: work order cancelled, car rentable again */}
       <Callout k={freeK} y={520}>
-        <div style={{ fontSize: 26, fontWeight: 900, color: C.ink }}>{U.calloutFree}</div>
+        <div style={{ fontSize: 26, fontWeight: 900, color: C.ink }}>{rec ? U.recFreeCar : U.calloutFree}</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10, fontSize: 26, fontWeight: 700 }}>
           <span style={{ color: C.ink3, textDecoration: "line-through" }}>{U.calloutFreeFrom}</span>
           <span style={{ color: C.ink3 }}>→</span>

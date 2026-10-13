@@ -149,17 +149,35 @@ export const Tap: React.FC<{ x: number; y: number; at: number; t: number }> = ({
   if (t < at - 0.15 || t > at + 0.5) return null;
   return (
     <>
-      <div style={{ position: "absolute", left: x - 22, top: y - 22, width: 44, height: 44, borderRadius: 22, background: "rgba(20,20,20,0.35)", opacity: k * (1 - ring * 0.6) }} />
       <div
         style={{
           position: "absolute",
-          left: x - 22 - ring * 18,
-          top: y - 22 - ring * 18,
-          width: 44 + ring * 36,
-          height: 44 + ring * 36,
+          left: x - 24,
+          top: y - 24,
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          background: "rgba(215,0,15,0.32)",
+          border: "3px solid rgba(255,255,255,0.95)",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+          boxSizing: "border-box",
+          opacity: k * (1 - ring * 0.6),
+          transform: `scale(${1 - 0.15 * Math.min(1, k) + 0.15})`,
+          zIndex: 20,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: x - 24 - ring * 22,
+          top: y - 24 - ring * 22,
+          width: 48 + ring * 44,
+          height: 48 + ring * 44,
           borderRadius: 999,
-          border: "3px solid rgba(20,20,20,0.4)",
+          border: "4px solid rgba(215,0,15,0.85)",
+          boxSizing: "border-box",
           opacity: 1 - ring,
+          zIndex: 20,
         }}
       />
     </>
@@ -225,7 +243,7 @@ export const mockLabel = (file: string) => (hasRecording(file) || DEMO.mark ? nu
 // ---------------------------------------------------------------- demo markers
 // Until a screen recording is in public/demo/, each place a real demo goes is
 // marked in red: number, file, how long it runs and what to record (DEMO.mark).
-export const demoMarked = (id: DemoShotId) => DEMO.mark && !hasRecording(DEMO_SHOTS[id].file);
+export const demoMarked = (id: DemoShotId) => DEMO.mark && !DEMO_SHOTS[id].mock && !hasRecording(DEMO_SHOTS[id].file);
 // The review back office is on screen only until the three problems come in.
 const SHOT_LEN: Partial<Record<DemoShotId, number>> = { s2: S2_CUES.s2_3.at - 0.35 };
 const shotSeconds = (id: DemoShotId) => SHOT_LEN[id] ?? SCENES.find((s) => s.id === DEMO_SHOTS[id].scene)?.len ?? 0;
