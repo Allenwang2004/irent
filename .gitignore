@@ -9,5 +9,5 @@ datasets.zip
 __pycache__/
 
 # Kept local only
-video/
+video/out/
 eval/
