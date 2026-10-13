@@ -336,7 +336,7 @@ export const ReturnStart: React.FC<{ t: number; times: ReturnTimes }> = ({ t, ti
   }
   // 2. interior shots with the countdown, then lock the doors
   if (t < k.exteriorAt) {
-    const left = Math.max(0, 522 - Math.floor((t - k.interiorAt) * 4));
+    const left = Math.max(0, 282 - Math.floor((t - k.interiorAt) * 4)); // 5-minute limit (mobile RETURN_LOCK_SECONDS)
     const done = [0, 1, 2].map((i) => ramp(t, k.interiorAt + 0.25 + i * 0.3, 0.15));
     const lockPressed = interpolate(t, [k.lockAt - 0.05, k.lockAt, k.lockAt + 0.2], [0, 1, 0], clamp);
     const locked = ramp(t, k.lockAt + 0.25, 0.3);

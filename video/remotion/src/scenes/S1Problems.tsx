@@ -124,7 +124,7 @@ export const S1Problems: React.FC = () => {
   const c = S1_CUES;
 
   // "根據主辦方的資料集推估，iRent 一天約收到 2.7 萬張車況照片": the big counter stays
-  // "這些照片來自約 4,800 筆取還車，如果全靠人工看，每筆 1 到 2 分鐘，就需要 10 到 20 人"
+  // "如果全靠人工看，初步估計一天需要 10 到 20 人": the sum fills in while it is said
   const phaseC = c.s1_3.at - 0.2; // manpower estimate
   const phaseD = c.s1_4.at - 0.45; // estimate fades, ops / user panels come in
 
@@ -136,8 +136,8 @@ export const S1Problems: React.FC = () => {
   const lockBig = spring({ frame: frame - f(1.35), fps, config: { damping: 14, stiffness: 120 } });
   const calcIn = interpolate(t, [phaseC + 0.1, phaseC + 0.5], [0, 1], { ...clamp, easing: ease });
   const calcOut = interpolate(t, [phaseD, phaseD + 0.35], [1, 0], clamp);
-  const b = [ramp(t, c.s1_3.into(1.0)), ramp(t, c.s1_3.into(4.4)), ramp(t, c.s1_3.into(5.3)), ramp(t, c.s1_3.into(6.3))];
-  const peopleAt = c.s1_3.into(6.4);
+  const b = [ramp(t, c.s1_3.into(0.3)), ramp(t, c.s1_3.into(0.8)), ramp(t, c.s1_3.into(1.45)), ramp(t, c.s1_3.into(2.75))];
+  const peopleAt = c.s1_3.into(2.85);
   const leftIn = spring({ frame: frame - f(phaseD + 0.35), fps, config: { damping: 16, stiffness: 110 } });
   const rightIn = spring({ frame: frame - f(c.s1_4.at + 0.2), fps, config: { damping: 16, stiffness: 110 } });
   const sceneOut = interpolate(t, [S1_LEN - 0.35, S1_LEN], [1, 0], clamp);
@@ -230,7 +230,7 @@ export const S1Problems: React.FC = () => {
               </div>
             ))}
           </div>
-          <div style={{ position: "absolute", top: 700, width: "100%", textAlign: "center", fontSize: 24, color: C.ink3, opacity: ramp(t, c.s1_3.into(4.4), 0.4) }}>{S1.assumption}</div>
+          <div style={{ position: "absolute", top: 700, width: "100%", textAlign: "center", fontSize: 24, color: C.ink3, opacity: ramp(t, c.s1_3.into(0.9), 0.4) }}>{S1.assumption}</div>
         </AbsoluteFill>
       )}
 
@@ -251,7 +251,7 @@ export const S1Problems: React.FC = () => {
       <Sequence from={f(phaseD)} durationInFrames={f(0.6)}>
         <Audio src={staticFile("sfx/whoosh.wav")} volume={0.6} />
       </Sequence>
-      <Sequence from={f(c.s1_3.into(6.3))} durationInFrames={f(0.3)}>
+      <Sequence from={f(c.s1_3.into(2.75))} durationInFrames={f(0.3)}>
         <Audio src={staticFile("sfx/pop.wav")} volume={0.5} />
       </Sequence>
     </AbsoluteFill>

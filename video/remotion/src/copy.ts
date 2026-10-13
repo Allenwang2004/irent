@@ -238,7 +238,7 @@ export const DEMO_UI = {
   inUseSub: "ABC-1234・Toyota Camry",
   startReturn: "開始還車",
   billingStopped: "計費已停在 16:30",
-  returnRule: "請在 10 分鐘內拍完車內照片、下車並按「下一步」鎖門；超過時間會自動取消還車。",
+  returnRule: "請在 5 分鐘內拍完車內照片、下車並按「下一步」鎖門；超過時間會自動取消還車。",
   countdown: "剩下 08:42",
   interiorTitle: "先拍車內",
   interiorShots: ["加油卡／停車卡", "車內裝（前座）", "車內裝（後座）"],
@@ -370,7 +370,7 @@ export const S5_PANELS = {
     mech: [4],
     chip: "先拍車內，鎖門再拍車外",
     title: "改成先拍車內，再鎖門",
-    points: ["按下還車，計費就停止", "10 分鐘內拍完車內、下車鎖門", "鎖門不用等上傳，再拍車外"],
+    points: ["按下還車，計費就停止", "5 分鐘內拍完車內、下車鎖門", "鎖門不用等上傳，再拍車外"],
     // scraper/output (Google Play review, 2026-07-12)
     quote: "還車鎖門後才要拍內部照片，這很不合理⋯⋯",
     quoteMeta: "Google Play 用戶評論・2026/07/12",
