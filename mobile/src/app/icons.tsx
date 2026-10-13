@@ -85,6 +85,14 @@ export const Lock = (p: IconProps) => (
   </Svg>
 );
 
+export const LockClosed = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    <path d="M12 14.5v2.5" />
+  </Svg>
+);
+
 export const Pencil = (p: IconProps) => (
   <Svg {...p}>
     <path d="m14.5 5.5 4 4L9 19H5v-4l9.5-9.5Z" />

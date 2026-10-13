@@ -1,9 +1,59 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { RETURN_LOCK_SECONDS } from "@/lib/inspection";
-import { ReturnCar } from "../../icons";
+import { Lock, LockClosed, ReturnCar } from "../../icons";
+
+// Demo only: the door state lives in this browser, per rental, so it survives
+// a reload. Opening the door turns the button into "lock door", and back.
+const doorKey = (rentalId: number) => `irent-door-open-${rentalId}`;
+const doorListeners = new Set<() => void>();
+
+function subscribeDoor(listener: () => void) {
+  doorListeners.add(listener);
+  window.addEventListener("storage", listener);
+  return () => {
+    doorListeners.delete(listener);
+    window.removeEventListener("storage", listener);
+  };
+}
+
+function readDoorOpen(rentalId: number) {
+  try {
+    return localStorage.getItem(doorKey(rentalId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDoorOpen(rentalId: number, open: boolean) {
+  try {
+    if (open) localStorage.setItem(doorKey(rentalId), "1");
+    else localStorage.removeItem(doorKey(rentalId));
+  } catch {}
+  doorListeners.forEach((l) => l());
+}
+
+export function DoorButton({ rentalId }: { rentalId: number }) {
+  const open = useSyncExternalStore(
+    subscribeDoor,
+    () => readDoorOpen(rentalId),
+    () => false,
+  );
+  return (
+    <button
+      type="button"
+      onClick={() => writeDoorOpen(rentalId, !open)}
+      className={`flex h-[50px] flex-1 items-center justify-center gap-2 rounded-full text-base text-white ${
+        open ? "bg-accent" : "bg-irent-blue"
+      }`}
+    >
+      {open ? <LockClosed className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+      {open ? "鎖門" : "開車門"}
+    </button>
+  );
+}
 
 export function ElapsedTime({ since }: { since: string }) {
   const [now, setNow] = useState<number | null>(null);
