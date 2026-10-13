@@ -1,0 +1,13 @@
+src/node_modules/
+
+# The organiser's photos (competition use only, never publish) and everything
+# built from them: the evidence crops and the generated deck.
+src/img/crash*.png
+src/img/tidy*.png
+src/img/crash*_*.jpg
+src/img/tidy*_*.jpg
+# prototype screenshots that show the organiser's photos (see README)
+src/img/real/d_alerts.png
+src/img/real/s_receipt_return.png
+*.pptx
+*.pdf

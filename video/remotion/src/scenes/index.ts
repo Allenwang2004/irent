@@ -6,6 +6,7 @@ import { S3Cause } from "./S3Cause";
 import { S4Method } from "./S4Method";
 import { S5dWorker, S5eOrders } from "./S5Back";
 import { S5aPickup, S5bCamera, S5cReturn, S5fCases, S5gReceipt } from "./S5Demo";
+import { S5Results } from "./S5Results";
 import { S6Tech, S7Benefit, S8Outro } from "./S6to8";
 
 export const SCENE_COMPONENTS: Record<string, React.FC> = {
@@ -18,6 +19,7 @@ export const SCENE_COMPONENTS: Record<string, React.FC> = {
   S5b: S5bCamera,
   S5c: S5cReturn,
   S5d: S5dWorker,
+  S5r: S5Results,
   S5e: S5eOrders,
   S5f: S5fCases,
   S5g: S5gReceipt,

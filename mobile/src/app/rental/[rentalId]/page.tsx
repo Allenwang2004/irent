@@ -9,7 +9,6 @@ import {
   DashCam,
   DoorCard,
   Info,
-  Lock,
   Navigate,
   PairDevice,
   Parking,
@@ -17,11 +16,11 @@ import {
   SteeringWheel,
 } from "../../icons";
 import { Unavailable } from "../../unavailable";
-import { DueBack, ElapsedTime, StartReturnButton } from "./in-use";
+import { DoorButton, DueBack, ElapsedTime, StartReturnButton } from "./in-use";
 
 type Params = Promise<{ rentalId: string }>;
 
-// iRent's 用車頁. Only "start return" does anything in the demo; the rest is
+// iRent's 用車頁. Only the door and "start return" buttons work in the demo; the rest is
 // laid out as in the app, with illustrative station and due-back details.
 export default function RentalPage({ params }: { params: Params }) {
   return (
@@ -119,10 +118,7 @@ async function RentalContent({ params }: { params: Params }) {
           <p className="py-3 text-center text-sm text-ink-2">車門已經鎖上，但外部照片沒有完成。請聯絡客服協助完成還車。</p>
         ) : (
           <div className="flex items-center gap-5">
-            <span className="flex h-[50px] flex-1 items-center justify-center gap-2 rounded-full bg-irent-blue text-base text-white">
-              <Lock className="h-5 w-5" />
-              開車門
-            </span>
+            <DoorButton rentalId={rental.id} />
             <StartReturnButton rentalId={rental.id} />
           </div>
         )}

@@ -1,0 +1,15 @@
+{
+  "name": "irent-plus-deck",
+  "private": true,
+  "description": "iRent+ 解決方案簡報（pptxgenjs）",
+  "scripts": {
+    "build": "node build.js ../iRent+_解決方案.pptx"
+  },
+  "dependencies": {
+    "pptxgenjs": "4.0.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-icons": "5.7.0",
+    "sharp": "0.35.4"
+  }
+}

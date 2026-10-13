@@ -33,49 +33,53 @@ const lastEnd = (c: Cues) => Math.max(...Object.values(c).map((x) => x.end));
 
 // ---------------------------------------------------------------- per scene
 // tail = seconds the picture stays after the last line (time to read / breathe).
-export const S0_LEN = 3.6;
+export const S0_LEN = 2.6;
 
-export const S1_CUES = chain([["s1_1", 0.3], ["s1_2", 0.35], ["s1_3", 0.45], ["s1_4", 0.45]]);
-export const S1_LEN = lastEnd(S1_CUES) + 0.6;
+export const S1_CUES = chain([["s1_1", 0.3], ["s1_3", 0.45], ["s1_4", 0.45]]);
+export const S1_LEN = lastEnd(S1_CUES) + 0.35;
 
 export const S2_CUES = chain([["s2_1", 0.35], ["s2_2", 0.35], ["s2_3", 0.35], ["s2_4", 0.3], ["s2_5", 0.3]]);
-export const S2_LEN = lastEnd(S2_CUES) + 1.0;
+export const S2_LEN = lastEnd(S2_CUES) + 0.5;
 
 export const S3_CUES = chain([["s3_1", 0.4], ["s3_2", 0.3]]);
-export const S3_LEN = lastEnd(S3_CUES) + 0.8;
+export const S3_LEN = lastEnd(S3_CUES) + 0.4;
 
-export const S4_CUES = chain([["s4_1", 0.4], ["s4_2", 0.35], ["s4_3", 0.35], ["s4_4", 0.35]]);
-export const S4_LEN = lastEnd(S4_CUES) + 2.0;
+export const S4_CUES = chain([["s4_1", 0.4], ["s4_2", 0.35]]);
+export const S4_LEN = lastEnd(S4_CUES) + 0.75;
 
 export const S5A_CUES = chain([["s5a_1", 0.5]]);
-export const S5A_LEN = lastEnd(S5A_CUES) + 0.6;
+export const S5A_LEN = lastEnd(S5A_CUES) + 0.4;
 
-export const S5B_CUES = chain([["s5b_1", 0.4], ["s5b_2", 0.4]]);
-export const S5B_LEN = lastEnd(S5B_CUES) + 0.9;
+export const S5B_CUES = chain([["s5b_1", 0.4], ["s5b_2", 0.4], ["s5b_3", 0.4]]);
+export const S5B_LEN = lastEnd(S5B_CUES) + 0.45;
 
-export const S5C_CUES = chain([["s5c_1", 0.4]]);
-export const S5C_LEN = lastEnd(S5C_CUES) + 0.6;
+export const S5C_CUES = chain([["s5c_1", 0.4], ["s5c_2", 0.3]]);
+export const S5C_LEN = lastEnd(S5C_CUES) + 0.65;
 
-export const S5D_CUES = chain([["s5d_1", 0.45], ["s5d_2", 0.3], ["s5d_3", 0.3], ["s5d_4", 0.3]]);
-export const S5D_LEN = lastEnd(S5D_CUES) + 0.8;
+export const S5D_CUES = chain([["s5d_1", 0.45], ["s5d_2", 0.3], ["s5d_3", 0.3], ["s5d_4", 0.35], ["s5d_5", 0.3]]);
+export const S5D_LEN = lastEnd(S5D_CUES) + 0.4;
 
-export const S5E_CUES = chain([["s5e_1", 0.5], ["s5e_2", 0.35]]);
-export const S5E_LEN = lastEnd(S5E_CUES) + 0.9;
+// Results on the organiser's 144 pickup/return pairs, with real photos.
+export const S5R_CUES = chain([["s5r_1", 0.5], ["s5r_2", 0.3], ["s5r_3", 0.45]]);
+export const S5R_LEN = lastEnd(S5R_CUES) + 0.65;
 
-export const S5F_CUES = chain([["s5f_1", 0.5], ["s5f_2", 0.4]]);
-export const S5F_LEN = lastEnd(S5F_CUES) + 1.0;
+export const S5E_CUES = chain([["s5e_1", 0.5], ["s5e_2", 0.3]]);
+export const S5E_LEN = lastEnd(S5E_CUES) + 0.8;
+
+export const S5F_CUES = chain([["s5f_1", 0.5], ["s5f_2", 0.4], ["s5f_3", 0.3]]);
+export const S5F_LEN = lastEnd(S5F_CUES) + 0.55;
 
 export const S5G_CUES = chain([["s5g_1", 0.5], ["s5g_2", 0.4]]);
-export const S5G_LEN = lastEnd(S5G_CUES) + 0.8;
+export const S5G_LEN = lastEnd(S5G_CUES) + 0.4;
 
 export const S6_CUES = chain([["s6_1", 0.5], ["s6_2", 0.4]]);
-export const S6_LEN = lastEnd(S6_CUES) + 0.9;
+export const S6_LEN = lastEnd(S6_CUES) + 0.45;
 
-export const S7_CUES = chain([["s7_1", 0.4], ["s7_2", 0.4]]);
-export const S7_LEN = lastEnd(S7_CUES) + 0.9;
+export const S7_CUES = chain([["s7_1", 0.4], ["s7_2", 0.35], ["s7_3", 0.35], ["s7_4", 0.45]]);
+export const S7_LEN = lastEnd(S7_CUES) + 0.55;
 
 export const S8_CUES = chain([["s8_1", 0.5]]);
-export const S8_LEN = lastEnd(S8_CUES) + 1.3;
+export const S8_LEN = lastEnd(S8_CUES) + 0.8;
 
 // ---------------------------------------------------------------- whole video
 const ORDER: { id: string; len: number; cues: Cues }[] = [
@@ -88,6 +92,7 @@ const ORDER: { id: string; len: number; cues: Cues }[] = [
   { id: "S5b", len: S5B_LEN, cues: S5B_CUES },
   { id: "S5c", len: S5C_LEN, cues: S5C_CUES },
   { id: "S5d", len: S5D_LEN, cues: S5D_CUES },
+  { id: "S5r", len: S5R_LEN, cues: S5R_CUES },
   { id: "S5e", len: S5E_LEN, cues: S5E_CUES },
   { id: "S5f", len: S5F_LEN, cues: S5F_CUES },
   { id: "S5g", len: S5G_LEN, cues: S5G_CUES },
@@ -104,13 +109,13 @@ export const TOTAL_LEN = SCENES[SCENES.length - 1].start + SCENES[SCENES.length 
 export const sceneStart = (id: string) => SCENES.find((s) => s.id === id)!.start;
 
 // Subtitle blocks, in seconds from the start of the whole video. A block can
-// collect several lines (the three problems at the end of S2 stay on one line).
+// collect several lines (see GROUPS).
 // `side` moves the subtitle to the right half while a phone is shown on the left.
 export type SubBlock = { from: number; to: number; side: "center" | "right"; parts: { at: number; text: string }[] };
 
-const GROUPS: Record<string, string[][]> = {
-  S2: [["s2_1"], ["s2_2"], ["s2_3", "s2_4", "s2_5"]],
-};
+// Lines that share one subtitle block (shown one after another on the same line).
+// Empty: every line gets its own subtitle, so nothing stays on screen twice.
+const GROUPS: Record<string, string[][]> = {};
 const RIGHT_SIDE = new Set(["S5a", "S5b", "S5c", "S5g"]);
 
 export const SUBTITLES: SubBlock[] = SCENES.flatMap((s) => {

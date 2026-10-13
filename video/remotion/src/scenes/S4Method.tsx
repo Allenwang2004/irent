@@ -40,13 +40,14 @@ const StepIcon: React.FC<{ i: number }> = ({ i }) => {
 export const S4Method: React.FC = () => {
   const t = useT();
   const c = S4_CUES;
-  const colAt = [c.s4_2.at, c.s4_3.at, c.s4_4.at]; // focus follows the narration
+  // "拍照時手機當場檢查，送出後 AI 比對，有問題自動開工單，營運人員確認後用戶也看得到"
+  const colAt = [c.s4_2.at, c.s4_2.into(1.75), c.s4_2.into(3.1)]; // focus follows the narration
   const inAt = [c.s4_1.at + 0.2, c.s4_1.at + 0.55, c.s4_1.at + 0.9]; // but all columns are on screen early
   const titleK = ramp(t, 0.05, 0.5);
   const springs = [useSpringAt(inAt[0]), useSpringAt(inAt[1]), useSpringAt(inAt[2])];
   const focus = [0, 1, 2].reduce((acc, i) => (t >= colAt[i] ? i : acc), -1);
   const lockK = useSpringAt(colAt[0] - 0.1);
-  const allK = ramp(t, c.s4_4.end + 0.2, 0.5); // all columns back to full at the end
+  const allK = ramp(t, c.s4_2.end + 0.15, 0.45); // all columns back to full at the end
 
   let vx = COL_X[0];
   for (let i = 1; i < 3; i++) vx = vx + (COL_X[i] - vx) * ramp(t, colAt[i] - 0.1, 0.35);
@@ -88,15 +89,15 @@ export const S4Method: React.FC = () => {
                 </div>
                 <StepIcon i={i} />
               </div>
-              <div style={{ marginTop: 34, display: "flex", flexDirection: "column", gap: 30 }}>
+              <div style={{ marginTop: 30, display: "flex", flexDirection: "column", gap: items.length > 3 ? 22 : 30 }}>
                 {items.map((m, j) => {
                   const mk = ramp(t, inAt[i] + 0.3 + j * 0.25, 0.35);
                   return (
                     <div key={m.n} style={{ display: "flex", gap: 16, opacity: mk, transform: `translateX(${(1 - mk) * 16}px)` }}>
                       <Num n={m.n} size={48} />
                       <div>
-                        <div style={{ fontSize: 35, fontWeight: 900, color: C.ink, lineHeight: 1.3 }}>{m.name}</div>
-                        <div style={{ fontSize: 26, color: C.ink2, marginTop: 6, lineHeight: 1.45 }}>{m.note}</div>
+                        <div style={{ fontSize: 33, fontWeight: 900, color: C.ink, lineHeight: 1.3, whiteSpace: "nowrap" }}>{m.name}</div>
+                        <div style={{ fontSize: 25, color: C.ink2, marginTop: 4, lineHeight: 1.4 }}>{m.note}</div>
                       </div>
                     </div>
                   );

@@ -2,14 +2,14 @@
 import React from "react";
 import { AbsoluteFill } from "remotion";
 import { CarPhoto } from "../components/CarArt";
-import { MechChip, mockLabel, Narration, PhoneFrame, ramp, RecordingOr, sceneOpacity, Sfx, StepBar, useSpringAt, useT, PHONE } from "../components/Common";
+import { MechChip, Narration, PhoneFrame, ramp, sceneOpacity, Sfx, StepBar, useSpringAt, useT } from "../components/Common";
 import { Viewfinder } from "../components/Viewfinder";
 import { DEMO_UI as U, ORDERS, S5_PANELS as P, WORKER as W } from "../copy";
 import { VehicleList } from "../mock/Mobile";
 import { S5D_CUES, S5D_LEN, S5E_CUES, S5E_LEN } from "../timeline";
 import { C, FONT } from "../theme";
 
-const Header: React.FC<{ mech: number[]; chip: string; step: number }> = ({ mech, chip, step }) => (
+export const Header: React.FC<{ mech: number[]; chip: string; step: number }> = ({ mech, chip, step }) => (
   <>
     <div style={{ position: "absolute", left: 140, top: 46 }}>
       <MechChip mech={mech} label={chip} size={36} />
@@ -43,14 +43,19 @@ export const S5dWorker: React.FC = () => {
   const t = useT();
   const c = S5D_CUES;
   const workerK = useSpringAt(c.s5d_1.at - 0.2);
-  const photosAt = c.s5d_1.into(1.9);
-  const rule1At = c.s5d_2.at;
-  const rule2At = c.s5d_2.into(1.4);
-  const checkAt = [photosAt + 0.2, c.s5d_3.at, c.s5d_3.into(1.5), c.s5d_3.into(2.6)];
-  const voteAt = [c.s5d_4.at + 0.1, c.s5d_4.into(0.45), c.s5d_4.into(0.8)];
-  const majorityAt = c.s5d_4.into(1.5);
-  const outAt = c.s5d_4.into(2.4);
-  const pairHl = (i: number) => ramp(t, i === 0 ? rule1At : rule2At, 0.35) * (1 - ramp(t, i === 0 ? rule2At : c.s5d_3.at, 0.3));
+  const photosAt = c.s5d_1.into(1.2); // "後台 AI 把車身四角和前一次的照片比對"
+  // "為了確保用戶權益，取車時會跟上一次還車紀錄作比較，還車時就比這次取車紀錄"
+  const rule1At = c.s5d_2.into(1.7);
+  const rule2At = c.s5d_2.into(4.5);
+  // "只有在取車到還車之間的損傷，才會歸咎於用戶"
+  const blameAt = c.s5d_3.at;
+  const checkAt = [photosAt + 0.2, c.s5d_4.at, c.s5d_4.into(1.0), c.s5d_4.into(1.5)]; // "車內看整潔和遺留物"
+  // "每張照片 AI 看三次，以多數為準，有問題就寫入後台預警"
+  const voteAt = [c.s5d_5.into(0.75), c.s5d_5.into(1.0), c.s5d_5.into(1.25)];
+  const majorityAt = c.s5d_5.into(1.75);
+  const outAt = c.s5d_5.into(3.6); // "寫入後台預警"
+  const pairHl = (i: number) => ramp(t, i === 0 ? rule1At : rule2At, 0.35) * (1 - ramp(t, i === 0 ? rule2At : c.s5d_4.at, 0.3));
+  const blameK = ramp(t, blameAt, 0.4);
 
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: sceneOpacity(t, S5D_LEN), fontFamily: FONT }}>
@@ -107,8 +112,13 @@ export const S5dWorker: React.FC = () => {
         );
       })}
 
+      {/* only damage between this pickup and this return is the renter's */}
+      <div style={{ position: "absolute", left: PH.xs[1], width: PH.xs[2] + PH.w - PH.xs[1], top: 462, textAlign: "center", opacity: blameK, transform: `translateY(${(1 - blameK) * 10}px)` }}>
+        <span style={{ display: "inline-block", fontSize: 28, fontWeight: 900, color: C.red, background: C.redSoft, borderRadius: 999, padding: "6px 26px" }}>{W.blame}</span>
+      </div>
+
       {/* what is checked */}
-      <div style={{ position: "absolute", left: 140, top: 500, width: 1640, display: "flex", gap: 30 }}>
+      <div style={{ position: "absolute", left: 140, top: 535, width: 1640, display: "flex", gap: 30 }}>
         {W.checks.map((ch, i) => {
           const k = ramp(t, checkAt[i], 0.4);
           return (
@@ -121,7 +131,7 @@ export const S5dWorker: React.FC = () => {
       </div>
 
       {/* three reads, majority vote, alert */}
-      <div style={{ position: "absolute", left: 140, top: 690, width: 1640, height: 150, display: "flex", alignItems: "center", gap: 26 }}>
+      <div style={{ position: "absolute", left: 140, top: 705, width: 1640, height: 150, display: "flex", alignItems: "center", gap: 26 }}>
         <div style={{ fontSize: 30, fontWeight: 900, color: C.ink, width: 290, opacity: ramp(t, voteAt[0] - 0.2, 0.3) }}>{W.votesTitle}</div>
         {W.votes.map((v, i) => {
           const k = ramp(t, voteAt[i], 0.3);
@@ -152,13 +162,13 @@ export const S5dWorker: React.FC = () => {
 // ---------------------------------------------------------------- 5e work orders
 const COLS = [560, 300, 260];
 const ROW_H = 96;
-const FILE_E = "demo/s5e-vehicles.mp4";
 
 export const S5eOrders: React.FC = () => {
   const t = useT();
   const c = S5E_CUES;
-  const rowAt = [c.s5e_1.into(1.9), c.s5e_1.into(3.2), c.s5e_2.at, c.s5e_2.into(1.4)];
-  const pauseAt = c.s5e_1.into(4.4);
+  // "在後台這邊，預警一寫入就自動開工單，不用人工派單" / "同時暫停出租，下一位用戶不會借到有問題的車"
+  const rowAt = [c.s5e_1.into(2.1), c.s5e_1.into(2.4), c.s5e_1.into(2.7), c.s5e_1.into(3.0)];
+  const pauseAt = c.s5e_2.into(0.45);
   const headK = ramp(t, 0.15, 0.4);
   const pauseHl = ramp(t, pauseAt, 0.35);
   const phoneK = useSpringAt(0.3);
@@ -223,10 +233,9 @@ export const S5eOrders: React.FC = () => {
       </div>
       {/* the renter's car list */}
       <div style={{ opacity: phoneK, transform: `translateX(${(1 - phoneK) * 60}px)` }}>
-        <PhoneFrame x={1410} y={128} scale={0.86} label={mockLabel(FILE_E)}>
-          <RecordingOr file={FILE_E} width={PHONE.w} height={PHONE.h}>
-            <VehicleList t={t} pauseAt={pauseAt} />
-          </RecordingOr>
+        {/* animated phone screen (no screen recording for this one) */}
+        <PhoneFrame x={1410} y={128} scale={0.86}>
+          <VehicleList t={t} pauseAt={pauseAt} />
         </PhoneFrame>
       </div>
 

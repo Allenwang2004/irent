@@ -10,9 +10,9 @@ const wrap = (text: string, max: number) => {
   const mid = text.length / 2;
   let best = -1;
   for (let i = 0; i < text.length - 1; i++) {
-    if ("，、；：。".includes(text[i]) && (best < 0 || Math.abs(i + 1 - mid) < Math.abs(best - mid))) best = i + 1;
+    if ("，、；：。　".includes(text[i]) && (best < 0 || Math.abs(i + 1 - mid) < Math.abs(best - mid))) best = i + 1;
   }
-  return best > 0 ? `${text.slice(0, best)}\n${text.slice(best)}` : text;
+  return best > 0 ? `${text.slice(0, best).trimEnd()}\n${text.slice(best)}` : text;
 };
 
 // Burned-in subtitles that follow the narration line by line.
@@ -24,7 +24,7 @@ export const Subtitles: React.FC = () => {
   const raw = block.parts
     .filter((p) => t >= p.at)
     .map((p) => p.text)
-    .join("");
+    .join("　"); // lines have no end punctuation, so grouped lines get a full-width space
   const text = wrap(raw, block.side === "right" ? 26 : 44);
   const fade = Math.min(
     interpolate(t, [block.from, block.from + 0.12], [0, 1], { extrapolateRight: "clamp" }),

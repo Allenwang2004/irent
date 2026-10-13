@@ -8,3 +8,13 @@ tools/tts/kokoro-multi-lang-v1_1/
 remotion/public/private/
 lexicon-custom.txt
 tools/tts/preview_tw/
+
+# Backups made by tools/tts/split_recording.py
+tools/tts/audio_backup/
+
+# Screen recordings: the back office and receipts show the organiser's photos.
+# Competition use only, never publish. (s2-reviews.* was committed before this.)
+remotion/public/demo/*
+!remotion/public/demo/.gitkeep
+!remotion/public/demo/s2-reviews.*
+demo-raw/

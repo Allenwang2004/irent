@@ -24,10 +24,10 @@ export const S0Cover: React.FC = () => {
   const { fps } = useVideoConfig();
 
   // 1. Corners close in on the word.
-  const lock = spring({ frame, fps, config: { damping: 15, stiffness: 110 }, durationInFrames: 26 });
-  const pulse = interpolate(frame, [26, 30, 36], [1, 1.035, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const lock = spring({ frame, fps, config: { damping: 15, stiffness: 110 }, durationInFrames: 22 });
+  const pulse = interpolate(frame, [22, 26, 32], [1, 1.035, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   // 2. Corners shrink into the plus.
-  const shrink = interpolate(frame, [48, 64], [0, 1], {
+  const shrink = interpolate(frame, [34, 48], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: Easing.inOut(Easing.cubic),
@@ -40,12 +40,12 @@ export const S0Cover: React.FC = () => {
     w: big.w + (small.w - big.w) * shrink,
     h: big.h + (small.h - big.h) * shrink,
   };
-  const cornerFade = interpolate(frame, [52, 62], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const cornerFade = interpolate(frame, [38, 46], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
-  const plusIn = spring({ frame: frame - 60, fps, config: { damping: 11, stiffness: 160 } });
-  const brandIn = interpolate(frame, [16, 34], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const tagIn = interpolate(frame, [74, 92], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const exit = interpolate(frame, [f(S0_LEN) - 12, f(S0_LEN)], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const plusIn = spring({ frame: frame - 44, fps, config: { damping: 11, stiffness: 160 } });
+  const brandIn = interpolate(frame, [10, 26], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const tagIn = interpolate(frame, [44, 58], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const exit = interpolate(frame, [f(S0_LEN) - 8, f(S0_LEN)], [1, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
 
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: exit }}>
@@ -103,10 +103,10 @@ export const S0Cover: React.FC = () => {
       >
         {COVER.tagline}
       </div>
-      <Sequence from={24} durationInFrames={20}>
+      <Sequence from={20} durationInFrames={20}>
         <Audio src={staticFile("sfx/shutter.wav")} volume={0.9} />
       </Sequence>
-      <Sequence from={62} durationInFrames={45}>
+      <Sequence from={46} durationInFrames={32}>
         <Audio src={staticFile("sfx/ding.wav")} volume={0.8} />
       </Sequence>
     </AbsoluteFill>

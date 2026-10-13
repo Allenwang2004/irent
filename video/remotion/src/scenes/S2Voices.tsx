@@ -1,9 +1,9 @@
 import React from "react";
 import { AbsoluteFill, Easing, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
-import { clamp, mockLabel, Narration, ramp, RecordingOr, Sfx } from "../components/Common";
+import { clamp, DashedMark, demoMarked, DemoTag, mockLabel, Narration, ramp, RecordingOr, Sfx } from "../components/Common";
 import { BrowserFrame } from "../components/DemoSlot";
 import { Viewfinder } from "../components/Viewfinder";
-import { DEMO_UI, S2 } from "../copy";
+import { DEMO_SHOTS, DEMO_UI, S2 } from "../copy";
 import { S2_CUES, S2_LEN } from "../timeline";
 import { C, f, FONT, FPS } from "../theme";
 
@@ -11,7 +11,7 @@ const ease = Easing.out(Easing.cubic);
 const A = { accent: "#c8102e", bg: "#f4f4f2", line: "#e0dfda", ink: "#111", ink2: "#55544f", ink3: "#85847e" };
 const BW = 1500;
 const BH = 760;
-const FILE = "demo/s2-reviews.mp4";
+const FILE = DEMO_SHOTS.s2.file;
 const MAXN = Math.max(...S2.categories.map((c) => c.n));
 
 // Mock of web/src/app/(admin)/reviews: sources, category distribution, triage.
@@ -90,7 +90,7 @@ export const S2Voices: React.FC = () => {
   const t = frame / FPS;
   const c = S2_CUES;
 
-  const barsAt = c.s2_1.into(2.6); // "交給 AI 歸納分類"
+  const barsAt = c.s2_1.into(4.1); // "依問題分類"
   const hlAt = c.s2_2.at - 0.1;
   const browserOut = c.s2_3.at - 0.35;
   const cardAt = [c.s2_3.at - 0.05, c.s2_4.at - 0.05, c.s2_5.at - 0.05];
@@ -110,6 +110,7 @@ export const S2Voices: React.FC = () => {
       {out > 0 && (
         <AbsoluteFill style={{ opacity: out }}>
           <div style={{ position: "absolute", left: 210, top: 60, opacity: browserK, transform: `scale(${0.95 + 0.05 * browserK})`, transformOrigin: "center top" }}>
+            {demoMarked("s2") && <DashedMark inset={-14} radius={30} />}
             <BrowserFrame url={S2.url} width={BW}>
               <RecordingOr file={FILE} width={BW} height={BH}>
                 <ReviewsPage t={t} barsAt={barsAt} hl={hl} />
@@ -124,6 +125,7 @@ export const S2Voices: React.FC = () => {
             <div style={{ fontSize: 22, color: C.ink3, marginTop: 12 }}>{S2.statNote}</div>
           </div>
           <Viewfinder x={1290} y={300} w={470} h={330} progress={stat} thickness={7} arm={42} spread={90} />
+          <DemoTag id="s2" style={{ left: 1290, top: 690 }} />
         </AbsoluteFill>
       )}
 

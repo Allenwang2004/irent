@@ -41,6 +41,12 @@ const TechCard: React.FC<{ x: number; k: number; hl: number; word: string; title
   </div>
 );
 
+// The training loop: four equal steps, centred in the box, with a line back to the start.
+const LOOP_W = 300;
+const LOOP_GAP = 76;
+const LOOP_SPAN = LOOP_W * 4 + LOOP_GAP * 3;
+const LOOP_X0 = (1620 - 88 - LOOP_SPAN) / 2;
+
 export const S6Tech: React.FC = () => {
   const t = useT();
   const c = S6_CUES;
@@ -49,27 +55,45 @@ export const S6Tech: React.FC = () => {
   const right = useSpringAt(c.s6_1.at - 0.1);
   const rateK = useSpringAt(c.s6_2.at - 0.1);
   const cloudHl = ramp(t, c.s6_1.at, 0.3) * (1 - ramp(t, c.s6_2.at, 0.3));
+  const backK = ramp(t, c.s6_2.into(4.3), 0.7); // "所以模型會越來越準"
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: sceneOpacity(t, S6_LEN), fontFamily: FONT }}>
       <div style={{ position: "absolute", top: 70, width: "100%", textAlign: "center", fontSize: 58, fontWeight: 900, color: C.ink, opacity: titleK }}>{S6.title}</div>
       <TechCard x={150} k={left} hl={0} word={S6.edgeWord} title={S6.edgeTitle} points={S6.edgePoints} t={t} at={0.2} />
       <TechCard x={1000} k={right} hl={cloudHl} word={S6.cloudWord} title={S6.cloudTitle} points={S6.cloudPoints} t={t} at={c.s6_1.at - 0.1} />
-      {/* staff decisions become training data */}
-      <div style={{ position: "absolute", left: 150, top: 590, width: 1620, height: 210, borderRadius: 28, border: `3px solid ${C.red}`, padding: "26px 44px", boxSizing: "border-box", opacity: rateK, transform: `translateY(${(1 - rateK) * 30}px)` }}>
+      {/* staff decisions become training data, and the loop starts again */}
+      <div style={{ position: "absolute", left: 150, top: 580, width: 1620, height: 270, borderRadius: 28, border: `3px solid ${C.red}`, padding: "24px 44px", boxSizing: "border-box", opacity: rateK, transform: `translateY(${(1 - rateK) * 30}px)` }}>
         <div style={{ fontSize: 38, fontWeight: 900, color: C.red }}>{S6.loopTitle}</div>
-        <div style={{ display: "flex", alignItems: "center", marginTop: 22 }}>
+        <div style={{ position: "relative", marginTop: 20, height: 150 }}>
           {S6.loop.map((step, i) => {
-            const k = ramp(t, c.s6_2.into(0.6 + i * 1.3), 0.35);
+            // "營運每次確認或駁回，都會變成訓練資料，所以模型會越來越準"
+            const k = ramp(t, c.s6_2.into([0.3, 2.1, 2.9, 3.6][i]), 0.35);
+            const x = LOOP_X0 + i * (LOOP_W + LOOP_GAP);
             return (
               <React.Fragment key={step}>
-                {i > 0 && <div style={{ fontSize: 40, fontWeight: 900, color: C.red, margin: "0 22px", opacity: k }}>→</div>}
-                <div style={{ fontSize: 32, fontWeight: 700, color: C.ink, background: C.panel, borderRadius: 16, padding: "12px 26px", opacity: k, transform: `scale(${0.9 + 0.1 * k})` }}>{step}</div>
+                {i > 0 && (
+                  <div style={{ position: "absolute", left: x - LOOP_GAP, width: LOOP_GAP, top: 8, textAlign: "center", fontSize: 40, fontWeight: 900, color: C.red, opacity: k }}>→</div>
+                )}
+                <div style={{ position: "absolute", left: x, top: 0, width: LOOP_W, height: 68, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, fontWeight: 700, color: C.ink, background: C.panel, borderRadius: 16, opacity: k, transform: `scale(${0.9 + 0.1 * k})` }}>
+                  {step}
+                </div>
               </React.Fragment>
             );
           })}
-          <svg width={70} height={60} viewBox="0 0 70 60" style={{ marginLeft: 22, opacity: ramp(t, c.s6_2.into(5.0), 0.35) }}>
-            <path d="M10 30 a22 22 0 1 0 8 -17" fill="none" stroke={C.red} strokeWidth={5} strokeLinecap="round" />
-            <path d="M8 6 L18 13 L8 20" fill="none" stroke={C.red} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" />
+          {/* back from the last step to the first */}
+          <svg width={LOOP_SPAN} height={80} style={{ position: "absolute", left: LOOP_X0, top: 72, overflow: "visible" }}>
+            <path
+              d={`M${LOOP_SPAN - LOOP_W / 2} 4 V48 H${LOOP_W / 2} V12`}
+              fill="none"
+              stroke={C.red}
+              strokeWidth={5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              pathLength={1}
+              strokeDasharray={1}
+              strokeDashoffset={1 - backK}
+            />
+            <path d={`M${LOOP_W / 2 - 13} 22 L${LOOP_W / 2} 6 L${LOOP_W / 2 + 13} 22`} fill="none" stroke={C.red} strokeWidth={5} strokeLinecap="round" strokeLinejoin="round" opacity={backK > 0.95 ? 1 : 0} />
           </svg>
         </div>
       </div>
@@ -83,12 +107,16 @@ export const S6Tech: React.FC = () => {
 export const S7Benefit: React.FC = () => {
   const t = useT();
   const c = S7_CUES;
-  const d1 = c.s7_1.end - c.s7_1.at;
-  const at = (p: number) => c.s7_1.at + d1 * p;
-  const b = [ramp(t, at(0.0)), ramp(t, at(0.22)), ramp(t, at(0.42)), ramp(t, at(0.62))];
-  const cut = ramp(t, at(0.75), 0.6);
-  const oneK = useSpringAt(at(0.88));
-  const userK = ramp(t, c.s7_2.at - 0.1, 0.45);
+  // "導入後，人只需要透過我們建立的營運後台確認 AI 標記的部分": today's 10–20 people
+  const peopleAt = c.s7_1.into(0.6);
+  // the sum comes in on "…確認 AI 標記的部分" / "以一成估算，工作量降到 1 到 2 人"
+  const b = [ramp(t, c.s7_1.into(3.2)), ramp(t, c.s7_1.into(3.75)), ramp(t, c.s7_2.into(0.2)), ramp(t, c.s7_2.into(0.75))];
+  const cut = ramp(t, c.s7_2.into(1.3), 0.6);
+  const oneK = useSpringAt(c.s7_2.into(2.0));
+  // "一年估計省下 540 到 1,080 萬元人事成本"
+  const costK = useSpringAt(c.s7_3.into(0.8));
+  // "用戶不用一直重拍，不會接到髒車，車損也說得清"
+  const userK = ramp(t, c.s7_4.at - 0.1, 0.45);
   const beforeK = ramp(t, 0.1, 0.4);
   return (
     <AbsoluteFill style={{ background: C.bg, opacity: sceneOpacity(t, S7_LEN), fontFamily: FONT }}>
@@ -107,29 +135,42 @@ export const S7Benefit: React.FC = () => {
         <Op s="→" k={b[3]} size={68} />
         <Block n={S7.hours} unit={S7.hoursUnit} k={b[3]} size={100} />
       </div>
-      <div style={{ position: "absolute", top: 450, width: "100%", display: "flex", justifyContent: "center", gap: 14 }}>
+      <div style={{ position: "absolute", top: 400, width: "100%", display: "flex", justifyContent: "center", gap: 14 }}>
         {Array.from({ length: 20 }, (_, i) => {
           const keep = i < 2;
           const base = i < 10 ? 40 : 150;
           const color = keep && cut > 0.5 ? C.red : `rgba(${base},${base},${base},${1 - (keep ? 0 : cut * 0.85)})`;
           return (
-            <div key={i} style={{ opacity: ramp(t, at(0.62) + i * 0.025, 0.3) }}>
+            <div key={i} style={{ opacity: ramp(t, peopleAt + i * 0.025, 0.3) }}>
               <Person color={color} size={52} />
             </div>
           );
         })}
       </div>
-      <div style={{ position: "absolute", top: 548, width: "100%", textAlign: "center", opacity: oneK, transform: `scale(${0.9 + 0.1 * oneK})` }}>
-        <span style={{ fontSize: 40, fontWeight: 700, color: C.ink2, marginRight: 18 }}>約</span>
-        <span style={{ fontSize: 140, fontWeight: 900, color: C.red }}>{S7.after}</span>
-        <span style={{ fontSize: 56, fontWeight: 900, color: C.red, marginLeft: 8 }}>{S7.afterUnit}</span>
+      <div style={{ position: "absolute", top: 488, width: "100%", display: "flex", justifyContent: "center", alignItems: "baseline", gap: 0 }}>
+        <div style={{ opacity: oneK, transform: `scale(${0.9 + 0.1 * oneK})` }}>
+          <span style={{ fontSize: 40, fontWeight: 700, color: C.ink2, marginRight: 18 }}>約</span>
+          <span style={{ fontSize: 140, fontWeight: 900, color: C.red }}>{S7.after}</span>
+          <span style={{ fontSize: 56, fontWeight: 900, color: C.red, marginLeft: 8 }}>{S7.afterUnit}</span>
+        </div>
+        <div style={{ width: costK > 0 ? 3 : 0, height: 110, background: C.line, margin: "0 56px", alignSelf: "center", opacity: costK }} />
+        <div style={{ opacity: costK, transform: `scale(${0.9 + 0.1 * costK})`, display: costK > 0 ? "block" : "none" }}>
+          <span style={{ fontSize: 40, fontWeight: 700, color: C.ink2, marginRight: 18 }}>{S7.costPre}</span>
+          <span style={{ fontSize: 110, fontWeight: 900, color: C.red }}>{S7.cost}</span>
+          <span style={{ fontSize: 48, fontWeight: 900, color: C.red, marginLeft: 8 }}>{S7.costUnit}</span>
+        </div>
       </div>
-      <div style={{ position: "absolute", top: 790, width: "100%", textAlign: "center", opacity: userK, transform: `translateY(${(1 - userK) * 16}px)` }}>
+      <div style={{ position: "absolute", top: 704, width: "100%", textAlign: "center", opacity: userK, transform: `translateY(${(1 - userK) * 16}px)` }}>
         <span style={{ fontSize: 36, fontWeight: 700, color: C.ink, background: C.panel, borderRadius: 999, padding: "12px 36px" }}>{S7.userLine}</span>
       </div>
-      <div style={{ position: "absolute", left: 0, right: 0, top: 890, textAlign: "center", fontSize: 22, color: C.ink3, opacity: ramp(t, at(0.2), 0.4) }}>{S7.assumption}</div>
+      <div style={{ position: "absolute", left: 0, right: 0, top: 796, textAlign: "center", fontSize: 22, lineHeight: 1.5, color: C.ink3, opacity: ramp(t, c.s7_1.into(3.2), 0.4) }}>
+        {S7.assumption.map((l) => (
+          <div key={l}>{l}</div>
+        ))}
+      </div>
       <Narration cues={c} />
-      <Sfx at={at(0.88)} name="ding" volume={0.4} />
+      <Sfx at={c.s7_2.into(2.0)} name="ding" volume={0.4} />
+      <Sfx at={c.s7_3.into(0.8)} name="pop" volume={0.4} />
     </AbsoluteFill>
   );
 };

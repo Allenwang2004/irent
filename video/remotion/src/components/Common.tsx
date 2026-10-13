@@ -1,7 +1,7 @@
 import React from "react";
 import { Audio, Easing, getStaticFiles, interpolate, OffthreadVideo, Sequence, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
-import { DEMO_UI, STEPS } from "../copy";
-import type { Cues } from "../timeline";
+import { DEMO, DEMO_SHOTS, DEMO_UI, STEPS, type DemoShotId } from "../copy";
+import { S2_CUES, SCENES, type Cues } from "../timeline";
 import { C, f, FONT, FPS } from "../theme";
 
 export const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
@@ -149,17 +149,35 @@ export const Tap: React.FC<{ x: number; y: number; at: number; t: number }> = ({
   if (t < at - 0.15 || t > at + 0.5) return null;
   return (
     <>
-      <div style={{ position: "absolute", left: x - 22, top: y - 22, width: 44, height: 44, borderRadius: 22, background: "rgba(20,20,20,0.35)", opacity: k * (1 - ring * 0.6) }} />
       <div
         style={{
           position: "absolute",
-          left: x - 22 - ring * 18,
-          top: y - 22 - ring * 18,
-          width: 44 + ring * 36,
-          height: 44 + ring * 36,
+          left: x - 24,
+          top: y - 24,
+          width: 48,
+          height: 48,
+          borderRadius: 24,
+          background: "rgba(215,0,15,0.32)",
+          border: "3px solid rgba(255,255,255,0.95)",
+          boxShadow: "0 2px 10px rgba(0,0,0,0.35)",
+          boxSizing: "border-box",
+          opacity: k * (1 - ring * 0.6),
+          transform: `scale(${1 - 0.15 * Math.min(1, k) + 0.15})`,
+          zIndex: 20,
+        }}
+      />
+      <div
+        style={{
+          position: "absolute",
+          left: x - 24 - ring * 22,
+          top: y - 24 - ring * 22,
+          width: 48 + ring * 44,
+          height: 48 + ring * 44,
           borderRadius: 999,
-          border: "3px solid rgba(20,20,20,0.4)",
+          border: "4px solid rgba(215,0,15,0.85)",
+          boxSizing: "border-box",
           opacity: 1 - ring,
+          zIndex: 20,
         }}
       />
     </>
@@ -168,15 +186,17 @@ export const Tap: React.FC<{ x: number; y: number; at: number; t: number }> = ({
 
 // Phone bezel. Screen is 390 x 844 (iPhone points); content is drawn at that size.
 export const PHONE = { w: 390, h: 844, bezel: 12 };
-export const PhoneFrame: React.FC<{ x: number; y: number; scale?: number; children: React.ReactNode; label?: string | null; opacity?: number }> = ({
+export const PhoneFrame: React.FC<{ x: number; y: number; scale?: number; children: React.ReactNode; label?: string | null; opacity?: number; marked?: boolean }> = ({
   x,
   y,
   scale = 1,
   children,
   label,
   opacity = 1,
+  marked = false,
 }) => (
   <div style={{ position: "absolute", left: x, top: y, transform: `scale(${scale})`, transformOrigin: "top left", opacity }}>
+    {marked && <DashedMark inset={-16} radius={76} />}
     <div
       style={{
         width: PHONE.w + PHONE.bezel * 2,
@@ -202,6 +222,7 @@ export const PhoneFrame: React.FC<{ x: number; y: number; scale?: number; childr
 );
 
 // Plays the screen recording when public/<file> exists; otherwise shows the mock.
+// `from` (seconds to skip) and `rate` (playback speed) can also be set per file in copy.ts DEMO_SHOTS.
 export const RecordingOr: React.FC<{ file: string; width: number; height: number; startFrom?: number; children: React.ReactNode }> = ({
   file,
   width,
@@ -211,7 +232,59 @@ export const RecordingOr: React.FC<{ file: string; width: number; height: number
 }) => {
   const exists = getStaticFiles().some((s) => s.name === file);
   if (!exists) return <>{children}</>;
-  return <OffthreadVideo src={staticFile(file)} muted startFrom={f(startFrom)} style={{ width, height, objectFit: "cover", display: "block" }} />;
+  const shot = Object.values(DEMO_SHOTS).find((s) => s.file === file) as { from?: number; rate?: number } | undefined;
+  const from = shot?.from ?? startFrom;
+  const rate = shot?.rate ?? 1;
+  return <OffthreadVideo src={staticFile(file)} muted startFrom={f(from)} playbackRate={rate} style={{ width, height, objectFit: "cover", display: "block" }} />;
 };
 export const hasRecording = (file: string) => getStaticFiles().some((s) => s.name === file);
-export const mockLabel = (file: string) => (hasRecording(file) ? null : `${DEMO_UI.mockLabel}・${DEMO_UI.mockNote}`);
+export const mockLabel = (file: string) => (hasRecording(file) || DEMO.mark ? null : `${DEMO_UI.mockLabel}・${DEMO_UI.mockNote}`);
+
+// ---------------------------------------------------------------- demo markers
+// Until a screen recording is in public/demo/, each place a real demo goes is
+// marked in red: number, file, how long it runs and what to record (DEMO.mark).
+export const demoMarked = (id: DemoShotId) => DEMO.mark && !DEMO_SHOTS[id].mock && !hasRecording(DEMO_SHOTS[id].file);
+// The review back office is on screen only until the three problems come in.
+const SHOT_LEN: Partial<Record<DemoShotId, number>> = { s2: S2_CUES.s2_3.at - 0.35 };
+const shotSeconds = (id: DemoShotId) => SHOT_LEN[id] ?? SCENES.find((s) => s.id === DEMO_SHOTS[id].scene)?.len ?? 0;
+
+export const DashedMark: React.FC<{ inset?: number; radius?: number }> = ({ inset = -12, radius = 24 }) => (
+  <div style={{ position: "absolute", inset, borderRadius: radius, border: `5px dashed ${C.red}`, pointerEvents: "none", zIndex: 5 }} />
+);
+
+// Tall note for the empty space left of a phone.
+export const DemoNote: React.FC<{ id: DemoShotId; x: number; y: number; w?: number }> = ({ id, x, y, w = 236 }) => {
+  if (!demoMarked(id)) return null;
+  const s = DEMO_SHOTS[id];
+  return (
+    <div style={{ position: "absolute", left: x, top: y, width: w, fontFamily: FONT, background: C.red, color: "#fff", borderRadius: 20, padding: "20px 20px 22px", boxSizing: "border-box", boxShadow: "0 16px 40px rgba(215,0,15,0.25)" }}>
+      <div style={{ fontSize: 24, fontWeight: 900 }}>{DEMO.markWord}</div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+        <Num n={s.n} size={56} filled={false} />
+        <span style={{ fontSize: 26, fontWeight: 700 }}>{DEMO.markTodo}</span>
+      </div>
+      <div style={{ fontSize: 22, fontWeight: 700, marginTop: 14 }}>{DEMO.markSecs(shotSeconds(id))}</div>
+      <div style={{ fontSize: 19, marginTop: 10, lineHeight: 1.45, opacity: 0.95 }}>{s.what}</div>
+      <div style={{ fontSize: 16, marginTop: 12, padding: "4px 8px", background: "rgba(255,255,255,0.18)", borderRadius: 8, wordBreak: "break-all" }}>{s.file.replace(/^demo\//, "")}</div>
+    </div>
+  );
+};
+
+// Compact two-line tag, for places with little room.
+export const DemoTag: React.FC<{ id: DemoShotId; style?: React.CSSProperties }> = ({ id, style }) => {
+  if (!demoMarked(id)) return null;
+  const s = DEMO_SHOTS[id];
+  return (
+    <div style={{ position: "absolute", fontFamily: FONT, background: C.red, color: "#fff", borderRadius: 14, padding: "8px 16px", display: "flex", alignItems: "center", gap: 12, boxShadow: "0 10px 26px rgba(215,0,15,0.22)", zIndex: 6, ...style }}>
+      <Num n={s.n} size={40} filled={false} />
+      <div style={{ lineHeight: 1.3 }}>
+        <div style={{ fontSize: 20, fontWeight: 900, whiteSpace: "nowrap" }}>
+          {DEMO.markWord} {DEMO.markTodo}・{DEMO.markSecs(shotSeconds(id))}
+        </div>
+        <div style={{ fontSize: 16, whiteSpace: "nowrap" }}>
+          {s.file.replace(/^demo\//, "")}｜{s.what}
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -42,7 +42,7 @@ export const S1 = {
   peopleUnit: "人",
   assumption: "估算假設：每筆人工檢視 1–2 分鐘、每人每天 8 小時",
   opsTag: "營運端",
-  opsBig: "約 10–20 人",
+  opsBig: "需 10–20 人",
   opsSub: "每天 4,820 筆、80–160 個工時",
   userTag: "用戶端",
   userBig: "流程有問題",
@@ -50,31 +50,32 @@ export const S1 = {
 };
 
 // ---------------------------------------------------------------- S2 review back office
-// Source: scraper/output, deduplicated (970 reviews), classified with
+// Source: scraper/output (scraping branch), 924 reviews once each (46 Dcard posts
+// were scraped twice), classified with the keyword rules in
 // web/src/lib/review-categories.json. "related" = photo, cleanliness, damage.
 export const S2 = {
   pageTitle: "顧客評論",
   pageSub: "收集 Google Play、App Store、PTT、Dcard 的評論，依問題類型分類，標記重要程度與處理狀態。",
   url: "irent-admin / reviews",
-  aiChip: "AI 歸納分類",
-  total: "970 則評論",
+  aiChip: "自動分類",
+  total: "924 則評論",
   sources: [
     { name: "Google Play", n: 682 },
-    { name: "Dcard", n: 153 },
     { name: "PTT", n: 130 },
+    { name: "Dcard", n: 107 },
     { name: "App Store", n: 5 },
   ],
   categories: [
-    { label: "扣款、費用、罰單爭議", n: 274, related: false },
-    { label: "還車範圍、找車位、GPS 定位", n: 189, related: false },
-    { label: "拍照流程、照片被退", n: 147, related: true },
-    { label: "App 當機、鎖車失敗、連線", n: 106, related: false },
+    { label: "扣款、費用、罰單爭議", n: 250, related: false },
+    { label: "還車範圍、找車位、GPS 定位", n: 186, related: false },
+    { label: "拍照流程、照片被退", n: 145, related: true },
+    { label: "App 當機、鎖車失敗、連線", n: 105, related: false },
     { label: "車內髒亂、遺留物", n: 60, related: true },
     { label: "客服難聯絡、回覆慢", n: 53, related: false },
-    { label: "車損爭議、求償", n: 52, related: true },
+    { label: "車損爭議、求償", n: 49, related: true },
   ],
   triage: ["未處理", "討論中", "已修正", "不處理"],
-  statBig: "206 則",
+  statBig: "208 則",
   statLine: "跟車況有關",
   statNote: "拍照、髒亂、車損三類，重複只算一次",
   problemsTitle: "跟車況有關的三個問題",
@@ -82,7 +83,7 @@ export const S2 = {
   problems: [
     {
       title: "拍照耗時，常被要求重拍",
-      n: "147 則",
+      n: "145 則",
       quote: "還車拍照四邊都拍了\n還一直要我重拍，\n耗時好幾分鐘。",
       meta: "Google Play・2026/06/10",
     },
@@ -94,7 +95,7 @@ export const S2 = {
     },
     {
       title: "車損賠償，說不清責任",
-      n: "52 則",
+      n: "49 則",
       quote: "3 個月內都有可能\n會被坑說是你用的，\n要你賠。",
       meta: "Google Play・2026/02/20",
     },
@@ -107,7 +108,41 @@ export const DEMO = {
   placeholderTitle: "Demo 錄影待放",
   placeholderHint: "放入 public/demo/",
   placeholderHint2: " 後重新輸出",
+  // true: every place a real demo recording goes is marked in red (number, file
+  // name, length, what to record) until that recording is in public/demo/.
+  // Set to false to show the plain mock screens instead.
+  mark: true,
+  markWord: "實機 Demo",
+  markTodo: "待錄",
+  markSecs: (s: number) => `約 ${Math.round(s)} 秒`,
 };
+
+// Where the real demo recordings go. `scene` is used to show how long the clip runs.
+// S5e (the car list turning "整備中") stays as the animated phone screen, no recording.
+// A recording longer than its slot can be trimmed here instead of in an editor:
+// add `from: 12` to skip the first 12 seconds, `rate: 3` to play it 3x faster.
+// `taps`: where a finger pressed in a phone recording (seconds into the clip; x, y in
+// screen points, 390 x 844), drawn as a tap mark because iOS recordings don't show touches.
+// `mock`: no recording for this one; the animated screen stays (S5b and S5c use the real car photo and video).
+export const DEMO_SHOTS: Record<"s2" | "a" | "b" | "c" | "f" | "g", { n: number; scene: string; file: string; what: string; from?: number; rate?: number; mock?: boolean; taps?: { at: number; x: number; y: number }[] }> = {
+  s2: { n: 1, scene: "S2", file: "demo/s2-reviews.mp4", what: "評論後台：來源、問題分類、處理狀態" },
+  a: { n: 0, mock: true, scene: "S5a", file: "demo/s5a-pickup.mp4", what: "取車：已記錄的損傷 → 補拍特寫" },
+  b: { n: 0, mock: true, scene: "S5b", file: "demo/s5b-camera.mp4", what: "相機：疊影對齊 → 車牌、遠近提示 → 通過" },
+  c: { n: 0, mock: true, scene: "S5c", file: "demo/s5c-return.mp4", what: "還車：開始還車 → 車內 → 鎖門 → 車外" },
+  f: { n: 2, scene: "S5f", file: "demo/s5f-alerts.mp4", what: "後台預警：確認車損、駁回誤報" },
+  g: {
+    n: 3,
+    scene: "S5g",
+    file: "demo/s5g-receipt.mp4",
+    what: "歷史訂單 → 還車確認 → 取車確認",
+    // RDQ-1950「還車確認」, then RDE-6160「取車確認」 (going back used Safari's back button, cropped off)
+    taps: [
+      { at: 1.5, x: 278, y: 323 },
+      { at: 4.72, x: 112, y: 491 },
+    ],
+  },
+};
+export type DemoShotId = keyof typeof DEMO_SHOTS;
 
 // ---------------------------------------------------------------- S3 root cause
 export const S3 = {
@@ -133,17 +168,18 @@ export const STEPS = [
 export const MECH = [
   { n: 1, stage: 0, name: "已知車損提前告知", note: "取車時先列出已記錄的損傷" },
   { n: 2, stage: 0, name: "上次照片疊影對齊", note: "上一次同角度照片疊在畫面上" },
-  { n: 3, stage: 0, name: "手機即時畫質檢查", note: "每 0.5 秒檢查清晰度與亮度" },
-  { n: 4, stage: 1, name: "取車比上次、還車比取車", note: "取車時的差異記為取車前就有" },
-  { n: 5, stage: 1, name: "三次判讀、多數決", note: "無法判斷的照片送人工" },
-  { n: 6, stage: 2, name: "自動開工單、暫停出租", note: "髒汙排清潔、嚴重車損排檢修" },
-  { n: 7, stage: 2, name: "營運確認，記成已知車損", note: "駁回誤報，工單自動取消" },
-  { n: 8, stage: 2, name: "用戶取還車確認單", note: "AI 初步判讀與營運確認狀態" },
+  { n: 3, stage: 0, name: "即時檢查畫質、車牌、角度", note: "站錯、太遠太近、太暗都提醒" },
+  { n: 4, stage: 0, name: "先拍車內，鎖門再拍車外", note: "按下還車就停止計費" },
+  { n: 5, stage: 1, name: "取車比上次、還車比取車", note: "差異歸屬到對的人" },
+  { n: 6, stage: 1, name: "三次判讀、多數決", note: "無法比對的照片送人工" },
+  { n: 7, stage: 2, name: "自動開工單、暫停出租", note: "髒汙排清潔、嚴重車損排檢修" },
+  { n: 8, stage: 2, name: "營運確認，記成已知車損", note: "駁回誤報，工單自動取消" },
+  { n: 9, stage: 2, name: "用戶取還車確認單", note: "AI 初步判讀與營運確認狀態" },
 ];
 
 export const S4 = {
   titleA: "三個環節，",
-  titleB: "8 個機制",
+  titleB: "9 個機制",
   stageNames: ["拍照時", "送出後", "發現問題後"],
 };
 
@@ -152,7 +188,7 @@ export const DEMO_UI = {
   mockLabel: "示意畫面",
   mockNote: "依 App 與後台實際介面製作",
   plate: "ABC-1234",
-  carModel: "Toyota Yaris",
+  carModel: "Toyota Camry",
   // phone: pickup intro (mobile/src/app/inspection-flow.tsx)
   back: "返回",
   pickupTitle: "取車：檢查車輛狀況",
@@ -183,11 +219,12 @@ export const DEMO_UI = {
   camHint: "請站在左前方斜角，拍到整個車頭與車牌",
   camClose: "取消取車",
   liveAim: "對準後拍照",
+  liveMoved: "角度跟上次不同，請對齊上次的照片",
   liveBlur: "畫面模糊，請拿穩手機",
-  liveDark: "太暗了，請移到亮處或開補光",
-  liveOk: "畫面清楚，可以拍了",
+  liveFar: "比上次遠，請靠近一點",
+  liveDark: "比上次暗很多，請開補光或移到亮處",
+  liveOk: "看得到車牌，可以拍了",
   plateBadge: "車號：ABC-1234",
-  album: "從相簿選擇",
   hideRef: "隱藏上次照片",
   passLabel: "通過",
   passText: "照片清楚，可以使用。",
@@ -196,6 +233,23 @@ export const DEMO_UI = {
   retake: "重拍",
   use: "使用這張",
   plateLabel: "車牌",
+  // phone: return start (in-use.tsx, inspection-flow.tsx)
+  inUseTitle: "用車中",
+  inUseSub: "ABC-1234・Toyota Camry",
+  startReturn: "開始還車",
+  billingStopped: "計費已停在 16:30",
+  returnRule: "請在 5 分鐘內拍完車內照片、下車並按「下一步」鎖門；超過時間會自動取消還車。",
+  countdown: "剩下 08:42",
+  interiorTitle: "先拍車內",
+  interiorShots: ["加油卡／停車卡", "車內裝（前座）", "車內裝（後座）"],
+  lockStep: "下車鎖門",
+  lockButton: "確認，鎖門",
+  confirmReturn: "確認還車",
+  locked: "已鎖門",
+  lockNote: "照片在背景上傳，不用等",
+  exteriorTitle: "再拍車外",
+  exteriorShots: ["車身左前", "車身右前", "車身左後", "車身右後", "停車位置"],
+  done: "完成",
   // phone: return
   returnDamagesHeading: "這次租用有造成損傷嗎？",
   returnDamagesText: "如果有，可以主動拍下來說明，營運團隊會一併確認。（不強制）",
@@ -226,8 +280,8 @@ export const DEMO_UI = {
   clear: "沒有異常",
   // phone: receipt (mobile/src/app/records/[inspectionId]/page.tsx, lib/records.ts)
   receiptLinks: ["歷史訂單", "回到首頁"],
-  returnMeta: "ABC-1234・Toyota Yaris・2026年10月10日 下午4:30",
-  pickupMeta: "ABC-1234・Toyota Yaris・2026年10月10日 下午2:05",
+  returnMeta: "ABC-1234・Toyota Camry・2026年10月10日 下午4:30",
+  pickupMeta: "ABC-1234・Toyota Camry・2026年10月10日 下午2:05",
   receiptSummary: (n: number) => `AI 檢查發現 ${n} 項需要留意的地方。以下是初步判讀，以營運人員確認的結果為準。`,
   reviewPending: "AI 初步判讀",
   reviewConfirmed: "營運人員已確認",
@@ -279,44 +333,107 @@ export const DEMO_UI = {
   calloutFree: "RDS-6583",
   calloutFreeFrom: "整備中",
   calloutFreeTo: "可借用",
-  calloutSort: "最嚴重、等最久的排前面",
+  calloutSort: "最嚴重的問題排在最前面",
   calloutPending: "待處理",
   calloutPause: "暫停出租",
+  // the same callouts when the real recording (demo/s5f-alerts.mp4) is in: the cars in it
+  recNextCar: "RDU-6956",
+  recKnownTitle: "已記錄的損傷",
+  recNewDamage: "左前保險桿・破裂・嚴重",
+  recFreeCar: "RDE-6160",
+  // S5f: what happens to a confirmed new damage (the same rule as supabase/05_operations.sql)
+  branchTitle: "確認是新車損",
+  branchRepair: "需要立即維修",
+  branchRepairDo: "先送修",
+  branchRepairNote: "工單：檢修，修好前暫停出租",
+  branchEg: "例：",
+  branchMinor: "小損傷",
+  branchMinorDo: "恢復出租",
+  branchMinorNote: "記進這台車的車損紀錄",
+  branchNext: "下一位取車時就看得到",
 };
 
 export const S5_PANELS = {
   a: { step: 0, mech: [1], chip: "已知車損提前告知", title: "取車前，先列出已知車損", points: ["列出這台車已記錄的損傷", "提醒拍下特寫，保障自己的權益"] },
-  b: { step: 0, mech: [2, 3], chip: "疊影對齊・即時檢查", title: "對齊上一次的照片，當場拍對", points: ["上一次同角度的照片疊在畫面上", "每 0.5 秒檢查清晰度與亮度", "不合格當場重拍，不必先上傳"] },
-  c: { step: 0, mech: [] as number[], chip: "還車送出", title: "照片都把關過，拍完就能離開", points: ["每張照片都在手機上檢查過", "送出後交給後台 VLM 判斷", "完成頁可直接查看還車確認單"] },
-  d: { step: 1, mech: [4, 5], chip: "前後比對・三次多數決" },
-  e: { step: 2, mech: [6], chip: "自動開工單・暫停出租" },
-  f: { step: 2, mech: [7], chip: "營運確認・記成已知車損" },
-  g: { step: 2, mech: [8], chip: "用戶取還車確認單", title: "檢查結果，用戶看得到", points: ["AI 初步判讀，用白話說明", "標示營運人員是否已確認", "取車時就有的問題，不算這次租用"] },
+  b: {
+    step: 0,
+    mech: [2, 3],
+    chip: "疊影對齊・即時檢查",
+    title: "對齊上一次的照片，當場拍對",
+    points: ["上一次同角度的照片疊在畫面上", "即時檢查畫質、角度、遠近與光線", "不合格當場提醒重拍"],
+    guardTitle: "拍完就能離開，不用事後補拍",
+    // 27,367 photos a day x 2–3% (mobile/src/lib/quality.ts, calibrated on 1,200 return photos)
+    guardText: "推估每天約 550–820 張不合格照片，在手機上就當場重拍",
+  },
+  c: {
+    step: 0,
+    mech: [4],
+    chip: "先拍車內，鎖門再拍車外",
+    title: "改成先拍車內，再鎖門",
+    points: ["按下還車，計費就停止", "5 分鐘內拍完車內、下車鎖門", "鎖門不用等上傳，再拍車外"],
+    // scraper/output (Google Play review, 2026-07-12)
+    quote: "還車鎖門後才要拍內部照片，這很不合理⋯⋯",
+    quoteMeta: "Google Play 用戶評論・2026/07/12",
+  },
+  d: { step: 1, mech: [5, 6], chip: "前後比對・三次多數決" },
+  r: { step: 1, mech: [] as number[], chip: "實測結果" },
+  e: { step: 2, mech: [7], chip: "自動開工單・暫停出租" },
+  f: { step: 2, mech: [8], chip: "營運確認・記成已知車損" },
+  g: { step: 2, mech: [9], chip: "用戶取還車確認單", title: "檢查結果，用戶看得到", points: ["AI 初步判讀，用白話說明", "標示營運人員是否已確認", "取車時就有的問題，不算這次租用"] },
 };
 
 // S5d: what the lab-server worker does (worker/irent_worker/decide.py).
 export const WORKER = {
-  title: "VLM 檢查",
+  title: "AI 車況檢查",
   where: "Qwen 系列視覺語言模型",
   poll: "照片送出後自動檢查",
   chainTitle: "比對基準",
   photos: ["上一次紀錄", "這次取車", "這次還車"],
   rules: ["取車：比上一次紀錄", "還車：比這次取車"],
+  blame: "取車到還車之間的新損傷，才算這次租用",
   checks: [
     { what: "車身 4 角", find: "新車損" },
     { what: "車內", find: "整潔、遺留物" },
     { what: "卡夾", find: "加油卡、停車卡" },
     { what: "用戶回報", find: "核對損傷" },
   ],
-  votesTitle: "每張照片判讀 3 次",
+  votesTitle: "每張照片 AI 看 3 次",
   votes: ["新車損", "新車損", "無"],
-  majority: "多數決：新車損",
+  majority: "以多數為準：新車損",
   output: "寫入預警",
+};
+
+// S5r: results on the organiser's data (eval/README.md). Photos are the
+// organiser's, plates blurred, in public/private/ (kept out of git).
+export type EvidenceCardT = {
+  photos: [string, string][];
+  tag: string;
+  kind: "damage" | "tidy";
+  verdict?: string;
+  votes?: string;
+  verdicts?: [string, string, boolean][];
+  detail: string;
+};
+export const RESULTS = {
+  title: "主辦方資料集實測",
+  sub: "144 組取還車照片：24 組有索賠、120 組沒有",
+  gates: ["拍照時角度把關", "光線把關", "每組判讀 3 次"],
+  kpis: [
+    { value: 100, suffix: "%", label: "車損召回率", note: "有索賠的 24 組，全部判為新車損" },
+    { value: 3, suffix: "%", label: "誤報率", note: "沒有索賠的 120 組，被誤判的比例" },
+  ],
+  cards: [
+    { photos: [["private/results/crash1_pickup.jpg", "取車"], ["private/results/crash1_return.jpg", "還車"]], tag: "車身左前・白天", verdict: "新車損", votes: "3/3 次", detail: "保險桿破裂、大燈破損", kind: "damage" },
+    { photos: [["private/results/crash2_pickup.jpg", "取車"], ["private/results/crash2_return.jpg", "還車"]], tag: "車身左後・夜間", verdict: "新車損", votes: "3/3 次", detail: "保險桿凹陷破裂", kind: "damage" },
+    { photos: [["private/results/tidy1_front.jpg", "前座"], ["private/results/tidy1_rear.jpg", "後座"]], tag: "還車車內・夜間", verdicts: [["前座", "乾淨", false], ["後座", "髒汙", true]], detail: "後座有碎屑、地墊有沙土", kind: "tidy" },
+    { photos: [["private/results/tidy2_front.jpg", "前座"], ["private/results/tidy2_rear.jpg", "後座"]], tag: "還車車內・白天", verdicts: [["前座", "髒汙", true], ["後座", "乾淨", false]], detail: "中控台有灰塵、腳踏墊有污漬", kind: "tidy" },
+  ] as EvidenceCardT[],
+  note: "主辦方資料集照片，車牌已遮蔽",
 };
 
 // S5e: alerts -> work orders (supabase/05_operations.sql)
 export const ORDERS = {
-  title: "預警寫入後，資料庫自動處理",
+  title: "自動開工單，不用人工派單",
   head: ["預警", "工單", "暫停出租"],
   rows: [
     { alert: "車內髒汙", order: "清潔", pause: "是" },
@@ -332,17 +449,12 @@ export const S6 = {
   title: "手機管拍照品質，後台管車況判讀",
   edgeWord: "手機端",
   edgeTitle: "輕量影像檢查",
-  edgePoints: ["清晰度、亮度、反光", "每 0.5 秒一次，在手機上完成", "門檻以 1,200 張真實還車照片校準"],
+  edgePoints: ["畫質：清晰度、亮度、反光", "車牌：讀車牌判斷角度與遠近", "每 0.5 秒一次，都在手機上完成"],
   cloudWord: "後台",
   cloudTitle: "自架開源模型",
   cloudPoints: ["Qwen 系列視覺語言模型", "照片不外流，不按次付費", "同角度比對，判讀 3 次取多數決"],
-  loopTitle: "反覆迭代，模型更加強大",
+  loopTitle: "營運每次判斷都變成訓練資料，模型越來越準",
   loop: ["營運確認或駁回", "收集成資料集", "重新訓練模型", "更新上線"],
-  evalTitle: "離線評估：主辦方 144 組取還車照片（24 組有索賠）",
-  metrics: [
-    { label: "車損召回率", value: "[待補]" },
-    { label: "誤報率", value: "[待補]" },
-  ],
 };
 
 // ---------------------------------------------------------------- S7 benefit
@@ -359,8 +471,15 @@ export const S7 = {
   hoursUnit: "工時",
   after: "1–2",
   afterUnit: "人",
-  userLine: "用戶：每次取還車都有確認單，知道車況是怎麼判定的",
-  assumption: "估算假設：每筆人工檢視 1–2 分鐘、每人每天 8 小時、AI 標記率以 10% 計",
+  // 9–18 fewer people x NT$600k a year (assumption, same as the deck)
+  costPre: "每年約省",
+  cost: "540–1,080",
+  costUnit: "萬元人事成本",
+  userLine: "用戶：不用一直重拍、不會接到髒車、車損說得清",
+  assumption: [
+    "估算假設：每筆人工檢視 1–2 分鐘、每人每天 8 小時、AI 標記率以 10% 計（實測誤報率 3%）",
+    "人事成本以每人每年 60 萬元計（少 9–18 人），未扣除 GPU 與導入成本",
+  ],
 };
 
 // ---------------------------------------------------------------- S8 outro
@@ -368,7 +487,7 @@ export const S8 = {
   brand: "iRent",
   line: "利用 AI，打造全台最好的租車平台",
   // Team name shown under the brand at the end; leave empty to hide the line.
-  team: "",
+  team: "團隊：pp",
 };
 
 // ---------------------------------------------------------------- narration text
@@ -376,11 +495,12 @@ export const NARRATION = lines as { key: string; text: string; seconds: number }
 
 // Text written directly inside the mock screens (src/mock/) and scenes.
 const INLINE_TEXT =
-  "≈×→存檔STEP機制發現其他損傷？如果看到上面沒列出的損傷，可以拍下來回報，避免之後被誤認為是你造成的。（不強制）確認照片點照片可以重拍。確認無誤後送出。照片上傳中...請拍下這些已記錄損傷目前的狀況。登出";
+  "“≈×→存檔STEP機制發現其他損傷？如果看到上面沒列出的損傷，可以拍下來回報，避免之後被誤認為是你造成的。（不強制）確認照片點照片可以重拍。確認無誤後送出。照片上傳中...請拍下這些已記錄損傷目前的狀況。登出";
 
 export const ALL_TEXT =
-  JSON.stringify([COVER, S1, S2, DEMO, S3, STEPS, MECH, S4, DEMO_UI, S5_PANELS, WORKER, ORDERS, S6, S7, S8, NARRATION]) +
+  JSON.stringify([COVER, S1, S2, DEMO, DEMO_SHOTS, S3, STEPS, MECH, S4, DEMO_UI, S5_PANELS, WORKER, RESULTS, ORDERS, S6, S7, S8, NARRATION]) +
   INLINE_TEXT +
   [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [DEMO_UI.knownTitle(n), DEMO_UI.attention(n), DEMO_UI.receiptSummary(n), DEMO_UI.openItems(n)].join("")).join("") +
   DEMO_UI.photosNote("取車") + DEMO_UI.photosNote("還車") +
+  [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20].map(DEMO.markSecs).join("") +
   "0123456789,.%／・：、。⋯★☆處（）第次租用";

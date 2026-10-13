@@ -38,7 +38,7 @@ const Cross: React.FC<{ k: number }> = ({ k }) => (
 export const S3Cause: React.FC = () => {
   const t = useT();
   const c = S3_CUES;
-  const gateAt = [c.s3_1.at + 0.1, c.s3_1.into(1.9), c.s3_2.at];
+  const gateAt = [c.s3_1.into(1.3), c.s3_1.into(3.3), c.s3_2.at]; // 拍照時 / 人工審查 / 沒有比對
   const archiveAt = c.s3_2.end - 0.1;
 
   const titleK = ramp(t, 0.05, 0.5);

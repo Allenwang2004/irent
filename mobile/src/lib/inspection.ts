@@ -44,7 +44,7 @@ export const REQUIRED_SLOTS = REQUIRED_STEPS.map((s) => s.slot);
 // window to finish the interior and lock, or the return is cancelled. Locking
 // does not wait for the interior photos to finish uploading.
 export const INTERIOR_SLOTS = ["card", "angle-10", "angle-11"];
-export const RETURN_LOCK_SECONDS = 10 * 60;
+export const RETURN_LOCK_SECONDS = 5 * 60;
 
 // Return ends with where the car is parked, for the next renter: at least one
 // photo (no quality check) and an optional description.
