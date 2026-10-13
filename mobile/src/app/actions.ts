@@ -14,11 +14,13 @@ import {
   DAMAGE_AREAS,
   storagePath,
 } from "@/lib/inspection";
+import { requireSession } from "@/lib/auth";
 import { getSupabase } from "@/lib/supabase";
 
-// The demo has no user login, so every input is validated here, state changes
-// are guarded by the current status, and photos can only be written to the
-// inspection's own paths through short-lived signed URLs.
+// The demo has no user accounts, only a shared password (checked again in
+// every action, since actions are reachable by direct POST). Every input is
+// validated here, state changes are guarded by the current status, and photos
+// can only be written to the inspection's own paths through short-lived signed URLs.
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
@@ -117,6 +119,7 @@ function orderNo() {
 }
 
 export async function startPickup(vehicleId: number): Promise<Started & { rentalId: number }> {
+  await requireSession();
   if (!Number.isInteger(vehicleId)) throw new Error("Invalid vehicle");
   const supabase = getSupabase();
 
@@ -159,6 +162,7 @@ export async function startPickup(vehicleId: number): Promise<Started & { rental
 }
 
 export async function startReturn(rentalId: number): Promise<Started> {
+  await requireSession();
   if (!Number.isInteger(rentalId)) throw new Error("Invalid rental");
   const supabase = getSupabase();
   const { data: rental, error: rentalError } = await supabase
@@ -204,6 +208,7 @@ export async function startReturn(rentalId: number): Promise<Started> {
 }
 
 export async function startRegistration(vehicleId: number, token: string): Promise<Started> {
+  await requireSession();
   if (!Number.isInteger(vehicleId) || !UUID_RE.test(token)) throw new Error("Invalid registration link");
   const supabase = getSupabase();
   const { data: vehicle, error: vehicleError } = await supabase
@@ -257,6 +262,7 @@ export type LockResult = { ok: true } | { ok: false; reason: "expired" };
 // not wait for the interior photos to finish uploading (an underground car park
 // may have a weak signal); the final submit checks that every photo arrived.
 export async function lockReturn(inspectionId: string): Promise<LockResult> {
+  await requireSession();
   const inspection = await openInspection(inspectionId);
   if (inspection.kind !== "return") throw new Error("Not a return");
   if (inspection.locked_at) return { ok: true };
@@ -278,6 +284,7 @@ export async function lockReturn(inspectionId: string): Promise<LockResult> {
 }
 
 export async function extraUploadUrl(inspectionId: string, index: number): Promise<UploadTarget> {
+  await requireSession();
   if (!Number.isInteger(index) || index < 0 || index >= MAX_EXTRA_PHOTOS) throw new Error("Invalid photo");
   const inspection = await openInspection(inspectionId);
   if (inspection.kind === "registration") throw new Error("Not allowed");
@@ -288,6 +295,7 @@ export async function extraUploadUrl(inspectionId: string, index: number): Promi
 // Abandoning a pickup releases the car again. Abandoning a return before the
 // doors lock means the renter keeps the car and billing carries on.
 export async function cancelInspection(inspectionId: string) {
+  await requireSession();
   const inspection = await openInspection(inspectionId);
   if (inspection.locked_at) throw new Error("Doors already locked");
   const supabase = getSupabase();
@@ -300,6 +308,7 @@ export async function cancelInspection(inspectionId: string) {
 
 // For a pickup that was left half done (page closed): cancel it from the car list.
 export async function cancelPickupRental(rentalId: number) {
+  await requireSession();
   if (!Number.isInteger(rentalId)) throw new Error("Invalid rental");
   const supabase = getSupabase();
   const { data: rental } = await supabase
@@ -367,6 +376,7 @@ function validReport(r: PhotoReport) {
 }
 
 export async function completeInspection(inspectionId: string, reports: PhotoReport[], parking?: ParkingInfo) {
+  await requireSession();
   const inspection = await openInspection(inspectionId);
   const supabase = getSupabase();
 
