@@ -6,25 +6,18 @@
 
 Our entry for the iRent challenge at the 2026 Hotai AI Hackathon. It uses AI to check the photos taken at pickup and return. Blurry or dark photos are rejected on the phone the moment they are taken. After submission, a vision-language model (VLM) compares the photos for new damage, judges how clean the interior is, and checks the fuel and parking cards. When it finds a problem, it opens alerts and work orders for the operations team.
 
-| | |
-|---|---|
-| Video | To be added |
-| Deck | To be added |
-| Phone pickup and return simulation | https://irent-mobile.vercel.app (password required, provided separately) |
-| Operations dashboard | https://irent-admin-sepia.vercel.app (password required, provided separately) |
-
 ## Architecture
 
 Three layers, each with a different latency need:
 
 | Layer | Where it runs | What it does | Response time |
 |---|---|---|---|
-| Real-time | Phone browser | Checks sharpness, brightness and overexposure right after each photo; a failed photo must be retaken | Under 1 second |
+| Real-time | On the phone | Checks sharpness, brightness and overexposure right after each photo; a failed photo must be retaken | Under 1 second |
 | Analysis | Worker on a lab GPU server | Uses a VLM to compare pickup and return photos, judge interior cleanliness and left-behind items, and check the cards | Within a few minutes of submission |
 | Operations | Supabase and the operations dashboard | Opens alerts and work orders from the results; cars that need cleaning or repair are taken off rental automatically | Immediate |
 
 ```
-Phone web app (mobile/)
+Phone app (mobile/)
   Takes photos, real-time quality check (src/lib/quality.ts)
   Uploads photos directly with signed URLs
         |
@@ -40,14 +33,14 @@ VLM worker (worker/)                   Operations dashboard (web/)
   3 readings per photo, majority vote  vehicle management, customer reviews
 ```
 
-The phone app and the dashboard are both Next.js 16, deployed on Vercel. Both use the Supabase secret key on the server only; the browser never gets database access.
+Database keys stay on the server; neither the phone app nor the dashboard gives the client direct database access.
 
 ## Features
 
 ### Pickup and return (phone)
 
 - The screens follow the iRent app's pickup, in-use and return pages, and the photo order is the same: card holder, front seats, rear seats, front left, front right, rear left, rear right
-- The camera opens inside the page, with alignment guides and a translucent overlay of the last photo from the same angle; it warns about darkness or blur before the shutter is pressed
+- The camera opens inside the app, with alignment guides and a translucent overlay of the last photo from the same angle; it warns about darkness or blur before the shutter is pressed
 - On the four corner shots, the phone reads the licence plate live to confirm it is the rented car and that the angle matches the previous photo
 - Photo quality is checked on the phone as soon as a photo is taken (thresholds calibrated on 1,200 real return photos); a failed photo can only be retaken
 - Return: billing stops when 開始還車 (Start return) is pressed. The user then has 5 minutes to photograph the interior and lock the car; after that the return is cancelled and billing continues. Locking does not wait for uploads to finish, so a return still works with poor signal in an underground car park
@@ -76,8 +69,8 @@ New-damage detection was evaluated on the organiser's 144 pickup and return phot
 
 | Directory | Contents |
 |---|---|
-| `mobile/` | Phone pickup and return simulation (Next.js); see `mobile/README.md` |
-| `web/` | Operations dashboard (Next.js); see `web/README.md` |
+| `mobile/` | Phone app for pickup and return; see `mobile/README.md` |
+| `web/` | Operations dashboard; see `web/README.md` |
 | `supabase/` | SQL for tables, storage and triggers |
 | `worker/` | The VLM analysis service that runs on the GPU server; see `worker/README.md` |
 | `eval/` | Evaluation scripts for new-damage detection; see `eval/README.md` |
@@ -86,56 +79,3 @@ New-damage detection was evaluated on the organiser's 144 pickup and return phot
 | `video/` | Remotion project and narration for the video; see `video/README.md` |
 
 The organiser's photo dataset (`datasets/`) is not public and is not in the repo.
-
-## Running locally
-
-You need Node.js 20.9 or later and a Supabase project. The worker also needs a machine with a GPU.
-
-### 1. Database
-
-In the Supabase SQL Editor, run these files from `supabase/` in order:
-
-1. `01_reviews.sql`
-2. `04_inspections.sql`
-3. `05_operations.sql`
-4. `06_return_lock.sql`
-5. `07_parking.sql`
-
-`02_returns.sql` and `03_analyses.sql` are early demo versions replaced by `04_inspections.sql`; a new project does not need them.
-
-### 2. Operations dashboard
-
-```bash
-cd web
-npm install
-cp .env.example .env.local   # fill in SUPABASE_URL, SUPABASE_SECRET_KEY, ADMIN_PASSWORD, SESSION_SECRET, MOBILE_BASE_URL
-npm run import:reviews       # import the review data from scraper/output
-npm run dev                  # http://localhost:3000
-```
-
-### 3. Phone pickup and return simulation
-
-```bash
-cd mobile
-npm install
-cp .env.example .env.local   # fill in SUPABASE_URL and SUPABASE_SECRET_KEY for the same Supabase project as the dashboard
-npm run dev -- -p 3001       # http://localhost:3001
-```
-
-The camera in a mobile browser needs HTTPS, so deploy to Vercel to test on a phone. On a computer, localhost works with the webcam.
-
-### 4. VLM worker
-
-Start `Qwen/Qwen3.5-9B` with vLLM on the GPU server, then start the worker; see `worker/README.md`. Without a GPU, install the packages and fill in `worker/.env` as described in `worker/README.md`, then test the data flow with a fake model:
-
-```bash
-cd worker
-VLM_BACKEND=fake python -m irent_worker --check
-```
-
-### 5. Demo flow
-
-1. In the dashboard, add a car under 車輛 (Vehicles), open the registration link on a phone and take the baseline photos; the car becomes available
-2. On the phone home page, pick the car and pick it up: take the photos, record damage, confirm pickup, and the in-use page opens
-3. On the in-use page, press 開始還車 (Start return): photograph the interior, lock, photograph the exterior, record the parking spot and submit
-4. Once the worker finishes, the results appear under 預警 (Alerts) and 工單 (Work orders) in the dashboard; the phone's order history shows the pickup and return report
