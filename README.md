@@ -1,94 +1,99 @@
-# iRent+ 智能車況管家
+<p align="center">
+  <img src="docs/logo.svg" alt="iRent+ Smart Vehicle Condition Manager" width="420">
+</p>
 
-2026 和泰 AI 黑客松 iRent 題目的作品。用 AI 檢查取車與還車照片：拍照當下就在手機上擋掉模糊、太暗的照片，送出後由視覺語言模型（VLM）比對新車損、判斷車內整潔度、檢查加油卡和停車卡，有問題自動開預警和工單給營運團隊。
+# iRent+ Smart Vehicle Condition Manager
+
+Our entry for the iRent challenge at the 2026 Hotai AI Hackathon. It uses AI to check the photos taken at pickup and return. Blurry or dark photos are rejected on the phone the moment they are taken. After submission, a vision-language model (VLM) compares the photos for new damage, judges how clean the interior is, and checks the fuel and parking cards. When it finds a problem, it opens alerts and work orders for the operations team.
 
 | | |
 |---|---|
-| 說明影片 | 待補 |
-| 簡報 | 待補 |
-| 手機取還車模擬 | https://irent-mobile.vercel.app |
-| 營運後台 | https://irent-admin-sepia.vercel.app（需要密碼，另行提供） |
+| Video | To be added |
+| Deck | To be added |
+| Phone pickup and return simulation | https://irent-mobile.vercel.app (password required, provided separately) |
+| Operations dashboard | https://irent-admin-sepia.vercel.app (password required, provided separately) |
 
-## 系統架構
+## Architecture
 
-三層，各自負責不同的延遲需求：
+Three layers, each with a different latency need:
 
-| 層級 | 在哪裡跑 | 做什麼 | 回應時間 |
+| Layer | Where it runs | What it does | Response time |
 |---|---|---|---|
-| 即時層 | 手機瀏覽器 | 每張照片拍完立刻檢查清晰度、亮度、反光，不合格當場重拍 | 1 秒內 |
-| 分析層 | 實驗室 GPU server 上的 worker | 用 VLM 比對取車照和還車照、判斷車內整潔度和遺留物、檢查卡片 | 送出後幾分鐘內 |
-| 營運層 | Supabase 與營運後台 | 依結果開預警與工單，需要整理或維修的車自動暫停出租 | 即時 |
+| Real-time | Phone browser | Checks sharpness, brightness and overexposure right after each photo; a failed photo must be retaken | Under 1 second |
+| Analysis | Worker on a lab GPU server | Uses a VLM to compare pickup and return photos, judge interior cleanliness and left-behind items, and check the cards | Within a few minutes of submission |
+| Operations | Supabase and the operations dashboard | Opens alerts and work orders from the results; cars that need cleaning or repair are taken off rental automatically | Immediate |
 
 ```
-手機網頁（mobile/）
-  拍照，即時品質檢查（src/lib/quality.ts）
-  照片用簽名網址直接上傳
+Phone web app (mobile/)
+  Takes photos, real-time quality check (src/lib/quality.ts)
+  Uploads photos directly with signed URLs
         |
         v
-Supabase（supabase/）
-  Postgres：車輛、租用、取還車紀錄、照片、分析結果、預警、工單
-  Storage：取還車照片（私有 bucket）
+Supabase (supabase/)
+  Postgres: vehicles, rentals, inspections, photos, analyses, alerts, work orders
+  Storage: pickup and return photos (private bucket)
         ^                                   |
-        | 領工作、寫回結果                     | 預警、工單、車輛狀態
+        | claims jobs, writes results       | alerts, work orders, vehicle status
         |                                   v
-VLM worker（worker/）                  營運後台（web/）
-  vLLM + Qwen/Qwen3.5-9B               預警處理、工單、取還車紀錄、
-  每張照片判讀 3 次取多數決              車輛管理、顧客評論
+VLM worker (worker/)                   Operations dashboard (web/)
+  vLLM + Qwen/Qwen3.5-9B               Alerts, work orders, inspections,
+  3 readings per photo, majority vote  vehicle management, customer reviews
 ```
 
-手機和後台都是 Next.js 16，部署在 Vercel；兩者只在伺服器端用 Supabase 的 Secret key，瀏覽器拿不到資料庫權限。
+The phone app and the dashboard are both Next.js 16, deployed on Vercel. Both use the Supabase secret key on the server only; the browser never gets database access.
 
-## 主要功能
+## Features
 
-### 取車與還車（手機）
+### Pickup and return (phone)
 
-- 介面照 iRent App 的取車、用車、還車畫面做，拍照順序也一樣：卡夾、前座、後座、左前、右前、左後、右後
-- 頁面內直接開相機，疊上對齊框線和上一次同角度的半透明照片，按快門前就提示太暗或模糊
-- 拍完立刻在手機上檢查畫質（門檻用 1,200 張真實還車照校準），不合格只能重拍
-- 還車：按「開始還車」計費就停止，10 分鐘內拍完車內照片並鎖門，超過就取消還車、照常計費；鎖門不用等照片上傳完，地下室訊號差也能還車
-- 鎖門後拍車外四角，最後提供停車位置（照片加說明），方便下一位用戶找車
-- 可以主動拍下已知車損和其他損傷，保障自己的權益；送出後可查看 AI 初步判讀的取還車確認
+- The screens follow the iRent app's pickup, in-use and return pages, and the photo order is the same: card holder, front seats, rear seats, front left, front right, rear left, rear right
+- The camera opens inside the page, with alignment guides and a translucent overlay of the last photo from the same angle; it warns about darkness or blur before the shutter is pressed
+- On the four corner shots, the phone reads the licence plate live to confirm it is the rented car and that the angle matches the previous photo
+- Photo quality is checked on the phone as soon as a photo is taken (thresholds calibrated on 1,200 real return photos); a failed photo can only be retaken
+- Return: billing stops when 開始還車 (Start return) is pressed. The user then has 5 minutes to photograph the interior and lock the car; after that the return is cancelled and billing continues. Locking does not wait for uploads to finish, so a return still works with poor signal in an underground car park
+- After locking, the user photographs the four corners outside and records where the car is parked (a photo and a note), so the next user can find it
+- Users can photograph known damage and anything else they notice, to protect themselves; after submission they can see the AI's preliminary pickup and return report
 
-### AI 分析（worker）
+### AI analysis (worker)
 
-| 照片 | 判讀 | 可能開的預警 |
+| Photos | Check | Alerts it can open |
 |---|---|---|
-| 車外 4 角 | 跟基準照比對新車損（還車比取車照，取車比上一次紀錄） | 新車損、取車時已有的差異、無法比對送人工 |
-| 前座、後座 | 整潔度與遺留物 | 髒汙、遺留物 |
-| 卡夾 | 加油卡、停車卡是否都在 | 缺卡片 |
-| 用戶自拍的損傷 | 描述看得到的損傷，和比對結果核對 | 用戶回報的損傷 |
+| 4 exterior corners | Compares against the baseline for new damage (return against pickup, pickup against the previous record) | New damage, differences already present at pickup, cannot compare (sent for manual review) |
+| Front and rear seats | Cleanliness and left-behind items | Dirty interior, left-behind items |
+| Card holder | Whether the fuel card and parking card are both there | Missing card |
+| Damage photographed by the user | Describes the visible damage and checks it against the comparison | User-reported damage |
 
-新車損比對用主辦方的 144 組取還車照片評估，評估腳本和線上 worker 用同一套提示詞與多數決規則，方法見 `eval/README.md`。
+New-damage detection was evaluated on the organiser's 144 pickup and return photo pairs. The evaluation script and the live worker share the same prompts and majority-vote rules; see `eval/README.md` for the method.
 
-### 營運後台
+### Operations dashboard
 
-- 預警：依嚴重度排序，同一次取還車的預警合成一個案件；確認車損時可以記成已知車損，下一位用戶取車會被提示拍下來
-- 工單：髒汙開清潔、嚴重車損開維修、缺卡片和遺留物要聯絡用戶；未完成的清潔、維修會讓車暫停出租
-- 取還車紀錄、車輛管理（新增車輛、登錄基準照、已知車損）
-- 顧客評論：爬蟲收集的 iRent 還車相關評論，可分類、標記重要程度和處理狀態
+- Alerts: sorted by severity, with alerts from the same inspection grouped into one case. Confirmed damage can be recorded as known damage, and the next user is asked to photograph it at pickup
+- Work orders: dirty interiors open a cleaning order, serious damage a repair order, and missing cards or left-behind items a request to contact the user. Open cleaning and repair orders keep the car off rental
+- Inspection records and vehicle management (add vehicles, register baseline photos, known damage)
+- Customer reviews: iRent return-related reviews collected by the scraper, which can be categorised and marked with importance and status
 
-## 專案結構
+## Repository layout
 
-| 目錄 | 內容 |
+| Directory | Contents |
 |---|---|
-| `mobile/` | 手機取還車模擬（Next.js），說明見 `mobile/README.md` |
-| `web/` | 營運後台（Next.js），說明見 `web/README.md` |
-| `supabase/` | 資料表、Storage、觸發器的 SQL |
-| `worker/` | 在 GPU server 上常駐的 VLM 分析程式，說明見 `worker/README.md` |
-| `eval/` | 新車損判讀的評估腳本，說明見 `eval/README.md` |
-| `scraper/` | PTT、Dcard、Google Play、App Store 的還車評論爬蟲與資料，說明見 `scraper/README.md` |
-| `plan/` | 題目分析、系統架構、功能設計、模型策略、POC 與評估、簡報規劃 |
-| `video/` | 說明影片的 Remotion 專案與旁白，說明見 `video/README.md` |
+| `mobile/` | Phone pickup and return simulation (Next.js); see `mobile/README.md` |
+| `web/` | Operations dashboard (Next.js); see `web/README.md` |
+| `supabase/` | SQL for tables, storage and triggers |
+| `worker/` | The VLM analysis service that runs on the GPU server; see `worker/README.md` |
+| `eval/` | Evaluation scripts for new-damage detection; see `eval/README.md` |
+| `scraper/` | Return-review scrapers and data for PTT, Dcard, Google Play and the App Store; see `scraper/README.md` |
+| `plan/` | Problem analysis, architecture, feature design, model strategy, POC and evaluation, deck planning |
+| `video/` | Remotion project and narration for the video; see `video/README.md` |
 
-主辦方提供的照片資料集（`datasets/`）不公開，沒有放進 repo。
+The organiser's photo dataset (`datasets/`) is not public and is not in the repo.
 
-## 在本機執行
+## Running locally
 
-需要 Node.js 20.9 以上、一個 Supabase 專案；跑 worker 另外需要有 GPU 的機器。
+You need Node.js 20.9 or later and a Supabase project. The worker also needs a machine with a GPU.
 
-### 1. 建資料庫
+### 1. Database
 
-在 Supabase 的 SQL Editor 依序執行 `supabase/` 裡的：
+In the Supabase SQL Editor, run these files from `supabase/` in order:
 
 1. `01_reviews.sql`
 2. `04_inspections.sql`
@@ -96,41 +101,41 @@ VLM worker（worker/）                  營運後台（web/）
 4. `06_return_lock.sql`
 5. `07_parking.sql`
 
-`02_returns.sql`、`03_analyses.sql` 是早期的示範版本，已被 `04_inspections.sql` 取代，新專案不用執行。
+`02_returns.sql` and `03_analyses.sql` are early demo versions replaced by `04_inspections.sql`; a new project does not need them.
 
-### 2. 營運後台
+### 2. Operations dashboard
 
 ```bash
 cd web
 npm install
-cp .env.example .env.local   # 填 SUPABASE_URL、SUPABASE_SECRET_KEY、ADMIN_PASSWORD、SESSION_SECRET、MOBILE_BASE_URL
-npm run import:reviews       # 匯入 scraper/output 的評論資料
+cp .env.example .env.local   # fill in SUPABASE_URL, SUPABASE_SECRET_KEY, ADMIN_PASSWORD, SESSION_SECRET, MOBILE_BASE_URL
+npm run import:reviews       # import the review data from scraper/output
 npm run dev                  # http://localhost:3000
 ```
 
-### 3. 手機取還車模擬
+### 3. Phone pickup and return simulation
 
 ```bash
 cd mobile
 npm install
-cp .env.example .env.local   # 填跟後台同一個 Supabase 專案的 SUPABASE_URL、SUPABASE_SECRET_KEY
+cp .env.example .env.local   # fill in SUPABASE_URL and SUPABASE_SECRET_KEY for the same Supabase project as the dashboard
 npm run dev -- -p 3001       # http://localhost:3001
 ```
 
-手機上的網頁相機需要 HTTPS，要用手機測試請部署到 Vercel；在電腦上用 localhost 可以用視訊鏡頭。
+The camera in a mobile browser needs HTTPS, so deploy to Vercel to test on a phone. On a computer, localhost works with the webcam.
 
 ### 4. VLM worker
 
-在 GPU server 上用 vLLM 啟動 `Qwen/Qwen3.5-9B`，再啟動 worker，步驟見 `worker/README.md`。沒有 GPU 時，照 `worker/README.md` 裝好套件、填好 `worker/.env` 後，可以用假模型測資料流：
+Start `Qwen/Qwen3.5-9B` with vLLM on the GPU server, then start the worker; see `worker/README.md`. Without a GPU, install the packages and fill in `worker/.env` as described in `worker/README.md`, then test the data flow with a fake model:
 
 ```bash
 cd worker
 VLM_BACKEND=fake python -m irent_worker --check
 ```
 
-### 5. 示範流程
+### 5. Demo flow
 
-1. 後台「車輛」新增一台車，用手機打開登錄連結拍基準照，車輛變成可借用
-2. 手機首頁選車取車：拍照、損傷紀錄、確認取車，進入用車頁
-3. 用車頁按「開始還車」：拍車內、鎖門、拍車外、提供停車位置後送出
-4. worker 分析完，後台「預警」和「工單」出現結果；手機的歷史訂單可以看取還車確認
+1. In the dashboard, add a car under 車輛 (Vehicles), open the registration link on a phone and take the baseline photos; the car becomes available
+2. On the phone home page, pick the car and pick it up: take the photos, record damage, confirm pickup, and the in-use page opens
+3. On the in-use page, press 開始還車 (Start return): photograph the interior, lock, photograph the exterior, record the parking spot and submit
+4. Once the worker finishes, the results appear under 預警 (Alerts) and 工單 (Work orders) in the dashboard; the phone's order history shows the pickup and return report

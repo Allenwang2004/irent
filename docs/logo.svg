@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="120" viewBox="0 0 480 120" role="img" aria-label="iRent+ Smart Vehicle Condition Manager">
+  <rect x="8" y="12" width="96" height="96" rx="24" fill="#c52922"/>
+  <g fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M24 76V64l7-15a7 7 0 0 1 6.4-4h27.2a7 7 0 0 1 6.4 4l7 15v12"/>
+    <path d="M22 64h58v12H22z"/>
+    <path d="M30 76v8M72 76v8"/>
+  </g>
+  <circle cx="80" cy="38" r="14" fill="#fff"/>
+  <path d="M73.5 38.5l4.5 4.5 8.5-9" fill="none" stroke="#c52922" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="124" y="70" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="52" font-weight="700" fill="#c52922">iRent+</text>
+  <text x="126" y="98" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" font-weight="500" fill="#8a8d93">Smart Vehicle Condition Manager</text>
+</svg>
